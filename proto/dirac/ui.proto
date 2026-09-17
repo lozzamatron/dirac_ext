@@ -370,4 +370,7 @@ service UiService {
   rpc openWalkthrough(EmptyRequest) returns (Empty);
   // Initiates GitHub Copilot login flow
   rpc githubCopilotLogin(EmptyRequest) returns (Empty);
+
+  // Dirac EXT: opens a new, empty Dirac EXT conversation in an editor tab
+  rpc openInNewTab(EmptyRequest) returns (Empty);
 }
