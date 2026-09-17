@@ -293,6 +293,87 @@ not an outage. GLM-5.3-Flash on `:8001` took the same prompts unchanged and auth
 `max_tokens` budget reasoning and returns nothing.
 
 
+## WP4 — Agent Map v1, webview-only (branch `ext/wp4-agent-map`)
+
+A modal overlay over the chat view: the conversation as a root node on the left, one child node per
+subagent run and per Goal child task on the right, joined by elbow connectors, with a detail drawer.
+Opened from a button in the chat strip or with `Ctrl/Cmd+Shift+M`. **No extension-host change at all**
+— it reads data that already streams to the webview, so v1 cannot break core behaviour.
+
+### New files
+- `src/shared/agentMap.ts` — `AgentMapNode` / `AgentMapSnapshot` plus the pure formatters
+  (`formatAgentMapTokens`, `formatAgentMapDuration`, `agentMapNodeDurationMs`, `agentMapTotalTokens`).
+  In `shared/` so WP5's host-side producer emits the same shape and formats the same numbers.
+- `webview-ui/src/features/agent-map/buildAgentMap.ts` — the pure builder,
+  `(messages, goal, modelId, contextTokens) -> AgentMapSnapshot`. Subagent nodes come from cards where
+  `readSubagentCardData(card)` is defined; that single filter also excludes the aggregate
+  "Ran N subagents" card and the per-agent usage cards, so no `toolName` matching is needed.
+- `webview-ui/src/features/agent-map/{AgentMapOverlay,AgentMapNodeCard,AgentMapDrawer,connectors}.tsx`
+- `webview-ui/src/features/agent-map/__tests__/buildAgentMap.test.ts` — 19 cases.
+- `webview-ui/src/features/agent-map/__tests__/fixtures/` — captured from REAL runs by
+  `dirac_ext/tools/wp4-capture-fixture.mjs`; see its `CAPTURE.md`.
+
+### Touched upstream files
+- `webview-ui/src/features/modular-ui/chat/ModularChatView.tsx` — builds the snapshot (only while the
+  map is open), owns the open/closed state, renders the overlay, and handles `Ctrl/Cmd+Shift+M`.
+- `webview-ui/src/features/modular-ui/chat/components/SurfaceStrip.tsx` (ours, from WP3) — gained the
+  Agent Map button. It now renders on BOTH surfaces; the badge and the new-tab button stay tab-only.
+
+### The fixture is captured, not written
+The builder is a pure function of Dirac's own records, so a hand-written fixture would only prove the
+builder agrees with my guess about the card shape. `tools/wp4-capture-fixture.mjs` drives the real UI:
+one task that runs three subagents, one Goal that delegates to two child tasks plus a verification
+child, then copies `ui_messages.jsonl` and `goal.json` out of `~/.dirac/data/tasks/`.
+
+🔴 **`ui_messages.jsonl` is an operation LOG, not a message array** (`create` / `patch_card` /
+`patch_message` / `patch_api_status`, each with an `offset`). Every subagent's final status, usage and
+trajectory arrives as a later `patch_card`, so a reader of the `create` records alone sees three agents
+stuck at "running" with no usage. The test replays the log through the REAL chat store
+(`applyPresentationBatch`) instead of reimplementing the reducer — and the store gates that twice: it
+drops a batch whose `surfaceId` does not match its own, and it drops operations whose `offset` is not
+exactly `presentationOffset + 1`. Seed both in `beforeEach` or the replay silently yields nothing.
+
+### What the browser found that nothing else did
+- **CSS grid auto-placement put the third agent card inside the 40px connector column**, one word per
+  line. The root spans every child row in column 1, and auto-placement flowed around that span
+  differently than expected. Every cell is now placed explicitly by column AND row.
+- The first acceptance run asserted the node count straight after "the subagent cards exist in the
+  transcript" and read zero: the aggregate "Run Subagents" card is created and rendered *before* the
+  three per-agent cards exist. The map is now opened first and the assertion waits for nodes to appear
+  in it — which also proves the map is live rather than a snapshot taken on open.
+- Two harness traps worth remembering: section headings uppercased by CSS come back from `innerText`
+  UPPERCASE (a case-sensitive regex reports a missing section that is plainly on screen), and since
+  WP3 an editor tab is titled after its conversation, so a selector matching the tab by "Dirac EXT"
+  matches nothing.
+
+### Review (author GLM-5.3-Flash on :8001, reviewer Qwen 3.6 27B on :8003, `enable_thinking: false`)
+Verdict "DO NOT SHIP", 8 findings. Taken:
+- the overlay's `keydown` effect listed `children` (a fresh array each rebuild) in its dependencies, so
+  the listener was torn down and re-added on every chat update and every 1s tick — now registered once,
+  reading current state through refs;
+- no focus trap: `aria-modal` tells assistive tech the page is inert but does not stop the browser
+  tabbing into it, so a keyboard user landed on the chat input behind a scrim they cannot see through;
+- the snapshot was rebuilt on every streamed chunk even with the map closed — an O(messages) pass in
+  front of transcript rendering for a user who never opens it. Now built only while it is open, which
+  also removed the button's "are there agents?" tooltip variant (the map states its own empty case);
+- a node's status was carried by dot colour plus a `title` attribute, which screen readers do not
+  reliably announce — the status word is now in the accessible name;
+- `isComposing` guard on the shortcut, so an IME keystroke is not stolen. The reviewer also wanted the
+  shortcut suppressed while a text field has focus; **declined** — the chat input holds focus nearly
+  all the time, so that guard would make the shortcut unreachable.
+Rejected: "the root's `startedAt` may be a system message" — in Dirac `diracMessages[0]` IS the user's
+task message (the chat store derives `taskMessage` from it).
+
+### Verified in the browser (`dirac_ext/tools/wp4-acceptance.mjs`, evidence in `verification/wp4/`)
+The button on both surfaces; a truthful empty state for a conversation with no agents; a real
+three-subagent run appearing in the already-open map and every node reaching "completed" live; node
+titles taken from the subagent's job rather than its card header; the aggregate and usage cards
+producing no nodes; the root naming the model and the context size; the drawer's prompt, trajectory and
+usage table; Escape peeling the drawer before the map; `Ctrl+Shift+M` toggling; Tab staying inside the
+modal; status readable as text; and the whole thing re-rendered in a LIGHT theme with its panel light,
+its text dark and its node borders visible — i.e. reading `--vscode-*` rather than hard-coded colours.
+
+
 ## Build-host facts (not fork changes — they bite every WP)
 
 - **`npm run package` needs `unzip`, which this container does not have.** `scripts/prepare-extension-ripgrep-binaries.mjs`

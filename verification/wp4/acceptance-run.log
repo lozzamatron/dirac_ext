@@ -1,0 +1,51 @@
+workbench: Agent Manager - dirac_ext - code-server  (2026-09-17T08:10:22.311Z)
+PASS: the Dirac EXT sidebar is open
+PASS: the sidebar offers the Agent Map button (the map is about the conversation, not the surface)
+PASS: a Dirac EXT tab is open and in front
+PASS: the tab offers the Agent Map button
+empty-conversation subtitle: "No subagents or Goal tasks in this conversation yet."
+PASS: an empty conversation gets a truthful empty state, not '0 agents'
+PASS: the root node is rendered even when alone
+  shot → /mnt/nvmepool/SoftwareDevelopment/Projects/dirac_ext/dirac-ext/verification/wp4/01-empty-map.png
+PASS: Escape closes the map
+PASS: the tab accepted the subagent prompt
+PASS: the task really ran subagents and they appear in the OPEN map, live
+map while running: ["Reply ALPHA — completed","Reply BETA — completed","Reply GAMMA — completed"]
+PASS: the map shows exactly three agent nodes (got 3)
+PASS: a node names its own job (ALPHA; got ["Reply ALPHA","Reply BETA","Reply GAMMA"])
+PASS: a node names its own job (BETA; got ["Reply ALPHA","Reply BETA","Reply GAMMA"])
+PASS: a node names its own job (GAMMA; got ["Reply ALPHA","Reply BETA","Reply GAMMA"])
+PASS: node titles are the subagent's task title, not its "Agent: job" card header (got ["Reply ALPHA","Reply BETA","Reply GAMMA"])
+PASS: the aggregate card and the usage-summary cards produce NO nodes
+subtitle: "3 agents · click an agent for details"
+PASS: the subtitle counts the agents
+  shot → /mnt/nvmepool/SoftwareDevelopment/Projects/dirac_ext/dirac-ext/verification/wp4/02-map-live.png
+map after the run: [{"label":"Reply ALPHA — completed","text":"Status: completed. Reply ALPHA 0s · 5.1k tokens"},{"label":"Reply BETA — completed","text":"Status: completed. Reply BETA 0s · 5.1k tokens"},{"label":"Reply GAMMA — completed","text":"Status: completed. Reply GAMMA 0s · 5.1k tokens"}]
+PASS: every node reaches 'completed' while the map is open (the map is live, not a snapshot taken on open)
+PASS: each node shows a duration and a token figure
+  shot → /mnt/nvmepool/SoftwareDevelopment/Projects/dirac_ext/dirac-ext/verification/wp4/03-map-complete.png
+root node: "Status: completed. WP4MAP-MU59212G: use the use_subagents tool to run exactly three subagents in parallel, in one call. Give each a one-sentence job that needs no tools: subagent 1 replies with exactly ALPHA, subagent 2 with exactly BETA, subagent 3 with exactly GAMMA. Do not read, create or modify any files. Do not run any commands. When all three have replied, report their words and finish. glm-5.3-flash · 6k tokens in context"
+PASS: the root node is titled with the conversation
+PASS: the root node reports the context size
+drawer: "Reply ALPHA completed · 0s PROMPT Reply with exactly the word ALPHA and nothing else. TRAJECTORY TOOL respond(operation=complete, text=ALPHA) DONE ALPHA USAGE Input 227 Output 18 Cache read 4.9k Total 5.1k"
+PASS: the drawer shows the agent's prompt
+PASS: the drawer shows the trajectory
+PASS: the drawer shows a usage table
+  shot → /mnt/nvmepool/SoftwareDevelopment/Projects/dirac_ext/dirac-ext/verification/wp4/04-drawer.png
+PASS: Escape closes the drawer first
+PASS: ...and leaves the map open rather than throwing the whole thing away
+PASS: a second Escape closes the map
+PASS: Ctrl+Shift+M opens the map
+PASS: ...and closes it again
+  note: pointer click was intercepted by the webview iframe; used a DOM click instead
+first node accessible text: "Status: completed. Reply ALPHA 0s · 5.1k tokens"
+PASS: a node states its status in text, not by dot colour alone
+PASS: Tab cycles inside the modal instead of landing on the chat behind the scrim
+light-theme computed colours: {"panelBg":"rgb(255, 255, 255)","panelFg":"rgb(59, 59, 59)","nodeBg":"rgb(248, 248, 248)","nodeFg":"rgb(59, 59, 59)","nodeBorder":"rgb(229, 229, 229)"}
+panel luminance: bg=0.9999999999999999 fg=0.23137254901960783
+PASS: in a light theme the map's panel is light (it follows --vscode-* variables)
+PASS: ...and its text is dark, so the map is readable rather than white-on-white
+PASS: a node card has a visible border at rest, so it looks clickable without hovering
+  shot → /mnt/nvmepool/SoftwareDevelopment/Projects/dirac_ext/dirac-ext/verification/wp4/05-map-light-theme.png
+  shot → /mnt/nvmepool/SoftwareDevelopment/Projects/dirac_ext/dirac-ext/verification/wp4/06-map-dark-theme.png
+RESULT: 0 failing assertion(s)
