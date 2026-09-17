@@ -1,4 +1,4 @@
-workbench: project_overview.md - dirac_ext - code-server  (2026-09-17T07:05:37.427Z)
+workbench: Agent Manager - dirac_ext - code-server  (2026-09-17T08:53:01.071Z)
 PASS: the Dirac EXT sidebar is open and in front
 PASS: the sidebar shows NO surface badge (the strip is deliberately tab-only)
 PASS: the sidebar shows NO new-tab button
@@ -10,32 +10,32 @@ badge text: "TAB"
 PASS: the badge reads 'Tab' (got "TAB")
 PASS: the tab renders the new-tab button
 PASS: the fresh tab accepted a prompt
-active editor tab after the task started: "WP3TITLE-MU56QRH0 — reply with exactly…"
-PASS: the tab's title follows the conversation (contains WP3TITLE-MU56QRH0)
+active editor tab after the task started: "WP3TITLE-MU5AKVF3 — reply with exactly…"
+PASS: the tab's title follows the conversation (contains WP3TITLE-MU5AKVF3)
 PASS: the tab is no longer titled with the placeholder
 PASS: the title is short enough for a tab (39 chars)
 PASS: a long conversation is truncated with an ellipsis rather than rendered in full
-instances before the button: ["01M2Q2YDQAM478PTP6DCM0NZ4E","01M2Q2Z10D3C1FP21CY3A00PWD"] (2 editor tabs)
+instances before the button: ["01M2Q932EDPF66GH97R7MG4KM4","01M2Q93NMA5S2TJA1BXZVVW7YE"] (3 editor tabs)
 PASS: a tab surface is in front to click the button in
-instances after the button: ["01M2Q2YDQAM478PTP6DCM0NZ4E","01M2Q2Z10D3C1FP21CY3A00PWD","01M2Q2ZC1YDQ707ZSDVP9NW173"]
+instances after the button: ["01M2Q932EDPF66GH97R7MG4KM4","01M2Q93NMA5S2TJA1BXZVVW7YE","01M2Q940P9BXTF68W7129B5KA4"]
 PASS: the button opened exactly one more editor tab
-PASS: the new tab has its OWN controller id (added ["01M2Q2ZC1YDQ707ZSDVP9NW173"])
+PASS: the new tab has its OWN controller id (added ["01M2Q940P9BXTF68W7129B5KA4"])
 PASS: the new instance reports surface 'tab'
 PASS: the new tab is the surface in front
 PASS: the new tab starts as an empty conversation titled 'Dirac EXT'
 PASS: the tab the button was clicked in still holds its own conversation
 PASS: the new tab accepted a long-running prompt
 PASS: the long task is observably mid-turn before the tab is closed
-title of the tab about to be closed: "WP3DETACH-MU56QRH0 write out the…"
+title of the tab about to be closed: "WP3DETACH-MU5AKVF3 write out the…"
 PASS: that tab is titled after its own conversation
 status bar: "Dirac EXT: 1 running in background"
 PASS: closing the tab mid-turn left the task running in the background
 quick pick placeholder: "Select a background task to re-attach"
 PASS: the re-attach quick pick is the widget on screen
-quick pick rows: ["WP3DETACH-MU56QRH0 write out the…running in the background"]
+quick pick rows: ["WP3DETACH-MU5AKVF3 write out the…running in the background"]
 PASS: the background task is listed by its CONVERSATION, not a raw task id
 PASS: no row leads with a raw task id
-re-attached tab title: "WP3DETACH-MU56QRH0 write out the…"
+re-attached tab title: "WP3DETACH-MU5AKVF3 write out the…"
 PASS: the re-attached tab comes back titled after its conversation
 PASS: the re-attached tab shows the same conversation it left with
 PASS: a fresh tab accepted a /goal objective
@@ -45,8 +45,8 @@ PASS: the Goal's tab is titled after the Goal, not the placeholder
 Goal status label: "Goal status: achieved"
 PASS: the Goal reached a terminal state inside the tab
 PASS: the Goal was achieved (state: achieved)
-final webviews: [{"id":"01M2Q2YDQAM478PTP6DCM0NZ4E","surface":"sidebar","front":true},{"id":"01M2Q2Z10D3C1FP21CY3A00PWD","surface":"tab","front":false},{"id":"01M2Q2ZC1YDQ707ZSDVP9NW173","surface":"tab","front":false},{"id":"01M2Q3088JN634N6XQ6ZS61853","surface":"tab","front":true}]
+final webviews: [{"id":"01M2Q932EDPF66GH97R7MG4KM4","surface":"sidebar","front":true},{"id":"01M2Q93NMA5S2TJA1BXZVVW7YE","surface":"tab","front":false},{"id":"01M2Q940P9BXTF68W7129B5KA4","surface":"tab","front":false},{"id":"01M2Q94WWEN038P9NP7FN954JQ","surface":"tab","front":true}]
 PASS: every live instance still has a DISTINCT controller id
 PASS: there is still exactly one sidebar instance
-final editor tabs: ["project_overview.md","WP3TITLE-MU56QRH0 — reply with exactly…","WP3DETACH-MU56QRH0 write out the…","Reply with exactly the text…"]
+final editor tabs: ["project_overview.md","Agent Manager","WP3TITLE-MU5AKVF3 — reply with exactly…","WP3DETACH-MU5AKVF3 write out the…","Reply with exactly the text…"]
 RESULT: 0 failing assertion(s)

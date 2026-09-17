@@ -1,4 +1,4 @@
-workbench: Agent Manager - dirac_ext - code-server  (2026-09-17T08:10:22.311Z)
+workbench: Agent Manager - dirac_ext - code-server  (2026-09-17T08:51:47.516Z)
 PASS: the Dirac EXT sidebar is open
 PASS: the sidebar offers the Agent Map button (the map is about the conversation, not the surface)
 PASS: a Dirac EXT tab is open and in front
@@ -18,13 +18,13 @@ PASS: node titles are the subagent's task title, not its "Agent: job" card heade
 PASS: the aggregate card and the usage-summary cards produce NO nodes
 subtitle: "3 agents · click an agent for details"
 PASS: the subtitle counts the agents
-map after the run: [{"label":"Reply ALPHA — completed","text":"Status: completed. Reply ALPHA 0s · 5.1k tokens"},{"label":"Reply BETA — completed","text":"Status: completed. Reply BETA 0s · 5.1k tokens"},{"label":"Reply GAMMA — completed","text":"Status: completed. Reply GAMMA 0s · 5.1k tokens"}]
-PASS: every node reaches 'completed' while the map is open (the map is live, not a snapshot taken on open)
+map after the run: [{"label":"Reply ALPHA — completed","text":"Status: completed. Reply ALPHA 1s · 15.6k tokens"},{"label":"Reply BETA — completed","text":"Status: completed. Reply BETA 0s · 5.1k tokens"},{"label":"Reply GAMMA — completed","text":"Status: completed. Reply GAMMA 1s · 5.2k tokens"}]
+PASS: every node reaches a terminal state while the map is open — the map is live, not a snapshot taken on open (got ["Reply ALPHA — completed","Reply BETA — completed","Reply GAMMA — completed"])
 PASS: each node shows a duration and a token figure
-root node: "Status: completed. WP4MAP-MU59212G: use the use_subagents tool to run exactly three subagents in parallel, in one call. Give each a one-sentence job that needs no tools: subagent 1 replies with exactly ALPHA, subagent 2 with exactly BETA, subagent 3 with exactly GAMMA. Do not read, create or modify any files. Do not run any commands. When all three have replied, report their words and finish. glm-5.3-flash · 6k tokens in context"
+root node: "Status: completed. WP4MAP-MU5AJANW: use the use_subagents tool to run exactly three subagents in parallel, in one call. Give each a one-sentence job that needs no tools: subagent 1 replies with exactly ALPHA, subagent 2 with exactly BETA, subagent 3 with exactly GAMMA. Do not read, create or modify any files. Do not run any commands. When all three have replied, report their words and finish. glm-5.3-flash · 6k tokens in context"
 PASS: the root node is titled with the conversation
 PASS: the root node reports the context size
-drawer: "Reply ALPHA completed · 0s PROMPT Reply with exactly the word ALPHA and nothing else. TRAJECTORY TOOL respond(operation=complete, text=ALPHA) DONE ALPHA USAGE Input 227 Output 18 Cache read 4.9k Total 5.1k"
+drawer: "Reply ALPHA completed · 1s PROMPT Reply with exactly the word ALPHA and nothing else. No tools needed. TRAJECTORY TOOL respond(operation=complete, text=ALPHA) DONE ALPHA USAGE Input 749 Output 44 Cache read 14.8k Total 15.6k"
 PASS: the drawer shows the agent's prompt
 PASS: the drawer shows the trajectory
 PASS: the drawer shows a usage table
@@ -34,7 +34,7 @@ PASS: a second Escape closes the map
 PASS: Ctrl+Shift+M opens the map
 PASS: ...and closes it again
   note: pointer click was intercepted by the webview iframe; used a DOM click instead
-first node accessible text: "Status: completed. Reply ALPHA 0s · 5.1k tokens"
+first node accessible text: "Status: completed. Reply ALPHA 1s · 15.6k tokens"
 PASS: a node states its status in text, not by dot colour alone
 PASS: Tab cycles inside the modal instead of landing on the chat behind the scrim
 light-theme computed colours: {"panelBg":"rgb(255, 255, 255)","panelFg":"rgb(59, 59, 59)","nodeBg":"rgb(248, 248, 248)","nodeFg":"rgb(59, 59, 59)","nodeBorder":"rgb(229, 229, 229)"}
