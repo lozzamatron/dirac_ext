@@ -19,18 +19,21 @@ PASS: exactly one tab webview is in front; the rest are stacked behind it
 editor tabs: ["project_overview.md","Dirac EXT","Dirac EXT"]
 side bar boundingBox with tabs open: {"x":44,"y":35,"width":294,"height":931}
 PASS: the side bar is still open next to the Dirac tabs
+  shot → /mnt/nvmepool/SoftwareDevelopment/Projects/dirac_ext/dirac-ext/verification/wp2/01-two-tabs-open.png
 PASS: sidebar instance 0T7QC6 ran its own task to completion
 PASS: sidebar instance 0T7QC6 shows NONE of the other conversations (found [])
 PASS: tab instance 0B1MFV ran its own task to completion
 PASS: tab instance 0B1MFV shows NONE of the other conversations (found [])
 PASS: tab instance HSX0Y9 ran its own task to completion
 PASS: tab instance HSX0Y9 shows NONE of the other conversations (found [])
+  shot → /mnt/nvmepool/SoftwareDevelopment/Projects/dirac_ext/dirac-ext/verification/wp2/02-three-conversations.png
 editor tabs 3 -> 4
 PASS: Move Conversation to a Tab opened one more editor tab
 instances showing the moved conversation: ["tab:01M2PZ5S9KSM5PZWE21Y4D91GT"]
 PASS: the moved conversation is now open in a tab
 PASS: the sidebar no longer shows the moved conversation
 PASS: exactly one view shows the moved conversation (found 1)
+  shot → /mnt/nvmepool/SoftwareDevelopment/Projects/dirac_ext/dirac-ext/verification/wp2/03-conversation-moved-to-tab.png
 PASS: a fresh tab opened and is the surface in front
 PASS: the fresh tab lists the already-open conversation under "Recent" (DIRAC-EXT-WP2-MU54D48X-1)
 views holding DIRAC-EXT-WP2-MU54D48X-1 before the second open: ["01M2PZ4ZAGH8X2J8ANH60B1MFV"]
@@ -41,12 +44,14 @@ PASS: exactly ONE view holds the conversation, no second copy (found 1)
 PASS: the fresh tab did NOT take the conversation
 front tab after the conflict: 01M2PZ4ZAGH8X2J8ANH60B1MFV
 PASS: the owning tab was revealed (it is the surface in front)
+  shot → /mnt/nvmepool/SoftwareDevelopment/Projects/dirac_ext/dirac-ext/verification/wp2/04-same-task-twice.png
 PASS: a fresh tab accepted a long-running prompt
 started a long task in tab instance 01M2PZ6Q6A2CVSVT71ZM9YGG0J
 PASS: the tab's task is observably mid-turn (Cancel offered) before the tab is closed
 closing tab: "Dirac EXT"
 status bar after closing the tab mid-task: "Dirac EXT: 1 running in background"
 PASS: the status bar reports a task still running in the background
+  shot → /mnt/nvmepool/SoftwareDevelopment/Projects/dirac_ext/dirac-ext/verification/wp2/05-detached-status-bar.png
 re-attach quick pick placeholder: "Select a background task to re-attach"
 PASS: the re-attach command opened its own quick pick (not the palette)
 re-attach quick pick offered: "1789624810548running in the background"
@@ -57,3 +62,5 @@ re-attached transcript tail: "21 1022 1023 1024 1025 1026 1027 1028 1029 1030 10
 PASS: the re-attached tab shows the same conversation, not an empty one
 background status items after re-attach: 0
 PASS: after re-attaching, the status bar no longer counts it as running in the background
+  shot → /mnt/nvmepool/SoftwareDevelopment/Projects/dirac_ext/dirac-ext/verification/wp2/06-reattached.png
+RESULT: 0 failing assertion(s)

@@ -187,6 +187,21 @@ than `getWebview()`, so tab instances receive events and a detached instance's s
   none of the other two.
 - **Opening a conversation another view owns** shows "already open in another Dirac EXT view", leaves
   exactly one view holding it, and reveals the owner rather than duplicating it.
+- **Move Conversation to a Tab** moves it: exactly one view shows it afterwards, and it is the tab.
+- **Closing a tab mid-turn does not kill the work.** The close handler logs its decision
+  (`Tab closed -> detach (status=streaming_text, apiActive=true)`), the status bar shows
+  "Dirac EXT: 1 running in background", and re-attaching brings back the **same controller id** with the
+  conversation still streaming (`… 1022 1023 1024 …`) — after which the status bar stops counting it.
+- 38 assertions, 0 failures (`verification/wp2/acceptance-log.txt`).
+
+**Known rough edge for WP3:** the re-attach quick pick labels the task with its raw id
+(`1789624810548`), because tab titles and conversation names are WP3's work.
+
+### Two diagnostics kept in the code
+`Tab closed -> <action> (status=…, apiActive=…)` at log level, and the background-count inputs at debug
+level. Both exist because the detach/dispose decision and the background count are made from state the
+user cannot see, and a wrong outcome is otherwise undiagnosable after the fact — which is exactly what
+happened three times while verifying this WP.
 
 ### ⚠️ A harness trap that produced two false results
 Playwright's actionability checks do not cross an iframe boundary. VS Code stacks all editor webviews at

@@ -627,6 +627,22 @@ ${ctx.cellJson || "{}"}
 			}
 		}
 
+		// Dirac EXT: the background count is decided from state the user cannot see; record what it was
+		// decided from, or a wrong count is undiagnosable after the fact. Debug level: this also runs on
+		// the 5s poll while a task is detached.
+		Logger.debug(
+			`[Dirac EXT] background status: ${JSON.stringify(
+				DiracWebviewProvider.getTabInstances().map((i) => {
+					const t = (i as VscodeDiracWebviewProvider).controller.task
+					return {
+						detached: (i as VscodeDiracWebviewProvider).isDetached?.() ?? false,
+						status: t?.taskState.status ?? "no task",
+						apiActive: t?.taskState.isApiRequestActive ?? false,
+					}
+				}),
+			)}`,
+		)
+
 		const runningCount = getRunningBackgroundInstances().length
 		if (runningCount === 0) {
 			backgroundTaskStatusBarItem.hide()
