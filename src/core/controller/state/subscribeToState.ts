@@ -4,6 +4,7 @@ import { telemetryService } from "@/services/telemetry"
 import { ExtensionState } from "@/shared/ExtensionMessage"
 import type { PresentationBatch } from "@/shared/PresentationOperation"
 import { Logger } from "@/shared/services/Logger"
+import { applyStateTitle } from "@core/webview/taskTitle"
 import { getRequestRegistry, StreamingResponseHandler } from "../grpc-handler"
 import { Controller } from "../index"
 
@@ -40,7 +41,11 @@ export async function subscribeToState(
 
 	try {
 		const initialDelivery = enqueueSubscriptionDelivery(responseStream, async () => {
-			await sendStateToSubscription(await controller.getStateToPostToWebview(), responseStream, 0)
+			const initialState = await controller.getStateToPostToWebview()
+			// Dirac EXT: a tab opened on an existing conversation would otherwise keep the default
+			// title until the next publication, which for a finished task never comes.
+			applyStateTitle(controllerId, initialState)
+			await sendStateToSubscription(initialState, responseStream, 0)
 		})
 		let subscriptions = activeStateSubscriptions.get(controllerId)
 		if (!subscriptions) {
@@ -61,6 +66,10 @@ export async function sendStateUpdate(
 	sequenceNumber: number,
 	presentation?: PresentationBatch,
 ): Promise<void> {
+	// Dirac EXT: before the early return below — a detached or not-yet-subscribed surface still has a
+	// title worth keeping current, and it is what the re-attach quick pick labels the task with.
+	applyStateTitle(controllerId, state)
+
 	const subscriptions = activeStateSubscriptions.get(controllerId)
 	if (!subscriptions || subscriptions.size === 0) {
 		return

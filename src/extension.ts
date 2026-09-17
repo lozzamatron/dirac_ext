@@ -54,6 +54,7 @@ import { telemetryService } from "./services/telemetry"
 import { SharedUriHandler, TASK_URI_PATH } from "./services/uri/SharedUriHandler"
 import { ShowMessageType } from "./shared/proto/host/window"
 import { openTasks } from "@core/task/OpenTaskRegistry"
+import { setTabOpener } from "@core/webview/tabOpener"
 import { TaskStatus } from "@shared/ExtensionMessage"
 
 // This method is called when the VS Code extension is activated.
@@ -745,6 +746,15 @@ ${ctx.cellJson || "{}"}
 		})
 	})
 
+	// Dirac EXT: the webview's "new tab" button reaches the host through the openInNewTab RPC, and the
+	// core handler must not know about vscode — so supply the implementation here, the way the task
+	// conflict handler above is supplied, and clear it on deactivation.
+	setTabOpener(async () => {
+		await openDiracTab(context)
+		updateBackgroundTaskStatus()
+	})
+	context.subscriptions.push({ dispose: () => setTabOpener(undefined) })
+
 	context.subscriptions.push(
 		vscode.commands.registerCommand("dirac-ext.openInNewTab", async () => {
 			await openDiracTab(context)
@@ -799,7 +809,9 @@ ${ctx.cellJson || "{}"}
 				return
 			}
 			const items = detached.map((instance) => ({
-				label: instance.controller.task?.taskId ?? "Untitled task",
+				// Dirac EXT: the raw task id told the user nothing about which conversation this was;
+				// the title derived from the conversation is recorded even while the tab is detached.
+				label: instance.getTitle() ?? instance.controller.task?.taskId ?? "Untitled task",
 				description: "running in the background",
 				instance,
 			}))

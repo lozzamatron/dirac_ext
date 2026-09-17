@@ -10,6 +10,7 @@ import { useSettingsStore } from "@/features/settings/store/settingsStore"
 import { cn } from "@/lib/utils"
 import { Navbar } from "@/shared/ui/Navbar"
 import { ChatLayout } from "./components/ChatLayout"
+import { SurfaceStrip } from "./components/SurfaceStrip"
 import { InteractionState, useInteractionState } from "./context/InteractionStateContext"
 // Decorators
 import { ActionButtonsDecorator } from "./decorators/view/ActionButtonsDecorator"
@@ -149,6 +150,7 @@ export const ModularChatView: React.FC<ChatViewProps> = ({ isHidden, showAnnounc
 						"modular-chat-shell flex flex-col flex-1 overflow-hidden",
 						effectiveMode === "plan" ? "bg-grid-plan" : "",
 					)}>
+					<SurfaceStrip />
 					{showNavbar && <Navbar />}
 					<div className="flex-1 flex flex-col overflow-hidden relative">
 						{sections.map((section) => (

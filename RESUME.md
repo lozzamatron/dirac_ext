@@ -5,11 +5,12 @@ upstream pinned at `041fce18` (v0.5.13).
 
 | Branch | State |
 |---|---|
-| `ext/main` | WP0 + WP1 + WP1b + **WP2** merged, pushed, **verified in the browser** |
+| `ext/main` | WP0 + WP1 + WP1b + WP2 + **WP3** merged, pushed, **verified in the browser** |
 | `ext/wp2-editor-tabs` | merged into `ext/main`; keep for history |
+| `ext/wp3-tab-polish` | merged into `ext/main`; keep for history |
 
-**Next work package: WP3** (tab titles showing the conversation, an instance badge in the webview
-header, a README "Surfaces" section, Goal-in-a-tab). Spec: `IMPLEMENTATION_PLAN.md` §3.
+**Next work package: WP4** (Agent Map v1, webview-only). Spec: `IMPLEMENTATION_PLAN.md` §3.
+**Capture the fixture first** — see the WP4 note below; the builder is written against real data.
 
 ## Shipped and verified
 - **WP0** — fork identity `lozza.dirac-ext` ("Dirac EXT"), side-by-side with upstream Dirac, sharing
@@ -43,10 +44,34 @@ Known rough edge handed to WP3: the re-attach quick pick labels a task with its 
 - The extension logs its own tab-close decision and background-count inputs (`Dirac` output channel);
   when a browser result is ambiguous, read those before theorising.
 
+## WP3 — DONE (merged 2026-09-17)
+Tab titles that follow the conversation, the tab-only surface strip (badge + new-tab button), the
+`openInNewTab` RPC with a host-supplied opener, a re-attach list labelled by conversation, a README
+"Surfaces" section, and a Goal verified running end to end inside a tab. Acceptance **36 assertions**
+(`dirac-ext/verification/wp3/`), fork tests 27 passing. Full detail in `dirac-ext/EXT_CHANGES.md` § WP3.
+
+### What WP3 taught
+- 🔴 **`deepseek-v4.1-flash:cloud` now returns an EMPTY answer for anything large** — a ~2,000-token
+  prompt with no attachments, and a short prompt with a 619-line diff attached, both came back with
+  `finish_reason=unknown` and no content; short prompts still work. **Author with GLM-5.3-Flash on
+  `:8001`** (it took the identical prompts and wrote good code) and review with Qwen on `:8003`
+  — which needs `enable_thinking: false`, or it burns the whole `max_tokens` budget reasoning and
+  returns nothing.
+- **A state pipeline cannot name a NEW conversation.** `currentTaskItem` is resolved out of the
+  persisted task history, which has no entry until the first result is written, so a title taken only
+  from state publications arrives a turn late — and *absence of a title in state is not evidence of
+  absence of a task*, so the naive fallback resets a good title to the placeholder on every
+  publication of the first turn. Two entry points, one guard. The browser found this; nothing else did.
+- 🔴 **A re-created webview leaves its predecessor in `page.frames()` with its DOM frozen.** A
+  first-match lookup then reads a transcript that never changes — indistinguishable from work that
+  never finishes. Twice this reported a Goal as stuck while the screenshot taken seconds later showed
+  it achieved. **Filter by the OUTER-iframe visibility already used to find the front surface**, and
+  assert on a stable attribute (`aria-label^="Goal status:"`) rather than a word in a text blob.
+
 ## Overnight run started 2026-09-17 ~01:50 (owner asleep; work autonomously, do not block on him)
 
-Order: **WP3 → WP4 → (WP5 if time)**. Merge each to `ext/main` and push before starting the next, so an
-interruption never leaves the tree half-done. Do not touch WP6 (it changes HIS Claude Code / Kilo config
+Order: **WP3 ✅ → WP4 → (WP5 if time)**. Merge each to `ext/main` and push before starting the next, so
+an interruption never leaves the tree half-done. Do not touch WP6 (it changes HIS Claude Code / Kilo config
 and §7 still has an open question about TokenSlayer's role) — leave it for him.
 
 ### WP3 scope (from IMPLEMENTATION_PLAN.md §3), with the design decisions already taken

@@ -15,6 +15,7 @@ import type { StateManager } from "../../storage/StateManager"
 import { Task } from "../../task"
 import { deserializeTaskError, type TaskRunOutcome } from "../../task/TaskRunOutcome"
 import { openTasks } from "../../task/OpenTaskRegistry"
+import { applyTaskTitle } from "../../webview/taskTitle"
 import { releaseTaskLock, tryAcquireTaskLockWithRetry } from "../../task/TaskLockUtils"
 import { detectWorkspaceRoots } from "../../workspace/detection"
 import { setupWorkspaceManager } from "../../workspace/setup"
@@ -287,6 +288,12 @@ export class TaskController {
 				return taskId
 			}
 			claimedHere = true
+			// Dirac EXT: name the surface after the conversation as soon as the task is ours. The state
+			// pipeline cannot do it this early — its `currentTaskItem` is resolved out of the persisted
+			// task history, which has no entry until the first result is written — so without this an
+			// editor tab, and the background-task list if it is closed mid-turn, would show the
+			// placeholder title for the whole first turn.
+			applyTaskTitle(controllerId, historyItem?.task ?? task)
 		}
 
 		try {

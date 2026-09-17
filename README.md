@@ -8,6 +8,28 @@ Dirac is an open-source coding agent you can use in VS Code, from the terminal, 
 
 Dirac combines autonomous task execution with purpose-built code tools: hash-anchored file editing, syntax-tree inspection and refactoring, parallel operations, subagents, continuous steering, and configurable permission controls. The goal is simple: give capable models better infrastructure so they can work longer, faster, and with less token overhead.
 
+## Surfaces: the sidebar and editor tabs
+
+*(Dirac EXT fork)* Dirac EXT can run several conversations at once in one window. Each one is a fully
+independent instance with its own conversation, model settings and history entry — they do not share a
+task, and the same conversation can only be open in one of them at a time.
+
+- **Sidebar** — the view Dirac has always used. There is one of these.
+- **Editor tabs** — **Dirac EXT: Open in New Tab** (Command Palette) opens another conversation as an
+  ordinary editor tab. Open as many as you like. A tab is titled after its conversation, so several
+  open at once stay distinguishable, and it carries a **Tab** badge and a **+** button in its header;
+  the **+** opens a further tab without leaving the webview.
+- **Move a conversation out of the sidebar** — **Dirac EXT: Move Conversation to a Tab** hands the
+  sidebar's current conversation to a new tab and leaves the sidebar empty for the next one. It is
+  refused while the agent is mid-turn; open a new tab instead, or wait.
+- **Drag a tab where you want it** — a Dirac EXT tab is a normal editor tab, so it can be dragged into
+  a split editor group, or onto the **secondary side bar** (View → Appearance → Secondary Side Bar) to
+  sit opposite the primary sidebar. Two conversations side by side, both live.
+- **Closing a tab does not kill the work.** Close one while the agent is mid-turn and the task keeps
+  running in the background; the status bar then reads *"Dirac EXT: N running in background"*. Click it
+  (or run **Dirac EXT: Re-attach a Background Task**) to bring the conversation back into a tab, picking
+  it from a list labelled by conversation. A tab closed on a finished conversation is simply closed.
+
 ## Why Dirac?
 
 <details>
