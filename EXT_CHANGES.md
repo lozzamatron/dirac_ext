@@ -216,6 +216,83 @@ assertion which cannot fail reports as a pass.
 
 ---
 
+## WP3 — tab titles, the surface strip, Goal-in-a-tab (branch `ext/wp3-tab-polish`)
+
+A tab now carries the identity of its conversation: its editor-tab title, a badge inside the webview,
+and the label it is listed under when it is running in the background.
+
+### New files
+- `src/core/webview/taskTitle.ts` — `formatTaskTitle()` (whitespace-collapsed, word-boundary truncation
+  at 40 chars + `…`, `"Dirac EXT"` when there is no task) plus the two appliers, `applyTaskTitle` and
+  `applyStateTitle`. Deriving the title in core means every host gets the same rule; only a host with a
+  titled surface does anything with it.
+- `src/core/webview/tabOpener.ts` — `setTabOpener(fn)` / `openNewTab()`. The same seam shape as
+  `OpenTaskRegistry.setConflictHandler`: core must not import `vscode`, so `extension.ts` supplies the
+  implementation at activation and clears it on deactivation. `openNewTab()` returns a boolean and
+  swallows failures (a failed tab open must not surface as a failed gRPC call), logging both the
+  "no opener registered" and "opener threw" cases.
+- `src/core/controller/ui/openInNewTab.ts` — the `UiService.openInNewTab` handler. The file name and the
+  exported function name are load-bearing: `npm run protos` generates the dispatch entry from them.
+- `webview-ui/src/features/modular-ui/chat/components/SurfaceStrip.tsx` — the tab-only header strip.
+- `src/core/webview/__tests__/taskTitle.spec.ts` — 12 cases across both new core modules.
+
+### Touched upstream files
+- `proto/dirac/ui.proto` — `rpc openInNewTab(EmptyRequest) returns (Empty);` on `UiService`. **Run
+  `npm run protos` after touching this**; it regenerates `webview-ui/src/shared/api/grpc-client.ts` and
+  `src/generated/hosts/**`, which are committed.
+- `src/core/controller/state/subscribeToState.ts` — `applyStateTitle` on the initial delivery and at the
+  top of `sendStateUpdate`, deliberately **before** the no-subscriptions early return: a detached
+  surface still has a title worth keeping current, and that title is what the re-attach list shows.
+- `src/core/controller/task/TaskController.ts` — `applyTaskTitle(controllerId, historyItem?.task ?? task)`
+  as soon as the process-local claim succeeds.
+- `src/core/webview/WebviewProvider.ts` — base-class `setTitle()`/`getTitle()`. The base only *records*
+  the title, which is what lets a detached instance still be listed by its conversation.
+- `src/hosts/vscode/VscodeWebviewProvider.ts` — `setTitle` overrides and also applies to a panel;
+  `resolveSurface` re-applies the remembered title so a re-attached tab is named immediately.
+- `src/extension.ts` — registers the tab opener, clears it through `context.subscriptions`, and labels
+  the re-attach quick pick with `instance.getTitle()` instead of a raw task id.
+- `webview-ui/src/features/modular-ui/chat/ModularChatView.tsx` — renders `<SurfaceStrip />` as the first
+  child of the chat shell (that shell renders in both the welcome and task states, so an empty tab shows
+  it too).
+- `README.md` — a "Surfaces: the sidebar and editor tabs" section, including that a tab can be dragged
+  onto the secondary side bar.
+
+### The bug the browser found: the state pipeline cannot title a NEW conversation
+`ExtensionState.currentTaskItem` is resolved by looking `task.taskId` up in the **persisted task
+history**, and a brand-new task has no history entry until its first result is written. So a title taken
+only from state publications arrives a turn late: the first acceptance run showed a tab mid-turn still
+titled `Dirac EXT`, and — worse — the background-task list offering it with no conversation text at all.
+Hence the second entry point, `applyTaskTitle` at task startup, where the text is in hand.
+
+That created the opposite hazard: every publication of that first turn carries `currentTaskItem:
+undefined` and would reset the title straight back to the placeholder. `applyStateTitle` therefore bails
+out when a run is live (`presentationSurfaceId` set) but its history entry has no display text yet —
+**absence of a title in state is not evidence of absence of a task.**
+
+### Review (author GLM-5.3-Flash on :8001, reviewer Qwen 3.6 27B on :8003)
+Most of the report self-refuted as it went. One finding was worth taking: a `currentTaskItem` that
+exists but carries empty text (a run started from images or files alone) would still clobber the title.
+The guard now keys on the *text*, not on the presence of the object.
+
+### Verified in the browser (`dirac_ext/tools/wp3-acceptance.mjs`, evidence in `verification/wp3/`)
+- the sidebar renders NO surface strip (the fork leaves upstream's sidebar chrome alone);
+- an empty tab is titled `Dirac EXT`, shows one `Tab` badge and the new-tab button;
+- starting a task retitles the tab after the conversation, truncated with an ellipsis;
+- the header button opens one more tab with a NEW controller id, leaving the calling tab's conversation
+  in place;
+- a tab closed mid-turn is listed in the re-attach quick pick **by its conversation**, and comes back
+  titled;
+- a `/goal` objective typed into a tab runs to a terminal state there.
+
+### 🔴 Delegation: the author/reviewer roles had to swap
+`deepseek-v4.1-flash:cloud` — the author for WP1 and WP2 — now returns an **empty answer** for anything
+large: a ~2,000-token prompt with no attachments, and a short prompt with a 619-line diff attached, both
+came back with `finish_reason=unknown` and no content. Short prompts still work, so it is a size limit,
+not an outage. GLM-5.3-Flash on `:8001` took the same prompts unchanged and authored well. Qwen on
+`:8003` reviewed — but it must be called with `enable_thinking: false`, or it spends the whole
+`max_tokens` budget reasoning and returns nothing.
+
+
 ## Build-host facts (not fork changes — they bite every WP)
 
 - **`npm run package` needs `unzip`, which this container does not have.** `scripts/prepare-extension-ripgrep-binaries.mjs`

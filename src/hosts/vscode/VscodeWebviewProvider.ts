@@ -91,8 +91,12 @@ export class VscodeDiracWebviewProvider extends DiracWebviewProvider implements 
 		}
 	}
 
-	/** Sets the panel title when this instance is a panel; a no-op for the sidebar view. */
-	public setTitle(title: string): void {
+	/**
+	 * Applies the title to the editor tab. The base class records it for every surface; only a panel
+	 * can show one, and the sidebar view's title belongs to its view container.
+	 */
+	public override setTitle(title: string): void {
+		super.setTitle(title)
 		if (this.webview && "onDidChangeViewState" in this.webview) {
 			this.webview.title = title
 		}
@@ -145,6 +149,13 @@ export class VscodeDiracWebviewProvider extends DiracWebviewProvider implements 
 		// Dirac EXT: every surface binding must clear the detached flag, otherwise a re-attached
 		// tab keeps reporting isDetached() === true and stays in the background-task UI.
 		this.detached = false
+
+		// Dirac EXT: a re-attached tab must show its conversation's title straight away. Waiting for
+		// the next state publication would leave a finished task titled "Dirac EXT" forever.
+		const knownTitle = this.getTitle()
+		if (knownTitle && "onDidChangeViewState" in webviewView) {
+			webviewView.title = knownTitle
+		}
 
 		webviewView.webview.options = {
 			// Allow scripts in the webview

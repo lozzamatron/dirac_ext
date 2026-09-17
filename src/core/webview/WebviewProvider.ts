@@ -34,6 +34,26 @@ export abstract class DiracWebviewProvider {
 		return this.controller.id
 	}
 
+	/** The title last derived for this instance, if any. */
+	private currentTitle: string | undefined
+
+	/**
+	 * Records the title derived from this instance's conversation.
+	 *
+	 * Hosts whose surface can show a title — a VS Code editor tab — override this and also apply it.
+	 * The base class remembers it regardless, so callers that need a human label for an instance (the
+	 * "re-attach a background task" quick pick, which otherwise shows a raw task id) still have one
+	 * while the instance is detached from any surface.
+	 */
+	public setTitle(title: string): void {
+		this.currentTitle = title
+	}
+
+	/** The title last passed to {@link setTitle}, or undefined before the first state publication. */
+	public getTitle(): string | undefined {
+		return this.currentTitle
+	}
+
 	/**
 	 * @deprecated use getLastActiveInstance(); kept so untouched upstream call sites keep compiling
 	 */

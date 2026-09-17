@@ -417,6 +417,9 @@ export class UiServiceClient extends ProtoBusClient {
 	static async githubCopilotLogin(request: proto.dirac.EmptyRequest): Promise<proto.dirac.Empty> {
 		return this.makeUnaryRequest("githubCopilotLogin", request, proto.dirac.EmptyRequest.toJSON, proto.dirac.Empty.fromJSON)
 	}
+	static async openInNewTab(request: proto.dirac.EmptyRequest): Promise<proto.dirac.Empty> {
+		return this.makeUnaryRequest("openInNewTab", request, proto.dirac.EmptyRequest.toJSON, proto.dirac.Empty.fromJSON)
+	}
 }
 export class WebServiceClient extends ProtoBusClient {
 	static override serviceName: string = "dirac.WebService"
