@@ -43,6 +43,38 @@ Known rough edge handed to WP3: the re-attach quick pick labels a task with its 
 - The extension logs its own tab-close decision and background-count inputs (`Dirac` output channel);
   when a browser result is ambiguous, read those before theorising.
 
+## Overnight run started 2026-09-17 ~01:50 (owner asleep; work autonomously, do not block on him)
+
+Order: **WP3 → WP4 → (WP5 if time)**. Merge each to `ext/main` and push before starting the next, so an
+interruption never leaves the tree half-done. Do not touch WP6 (it changes HIS Claude Code / Kilo config
+and §7 still has an open question about TokenSlayer's role) — leave it for him.
+
+### WP3 scope (from IMPLEMENTATION_PLAN.md §3), with the design decisions already taken
+1. **Tab title follows the task.** Seam: `sendStateUpdate(controllerId, state)` in
+   `src/core/controller/state/subscribeToState.ts` already runs on every publication and
+   `ExtensionState.currentTaskItem?: HistoryItem` carries the task text. After routing, notify
+   `webviewInstances.byControllerId(controllerId)`; the VS Code provider sets the panel title when
+   `surface === "tab"`. Same helper labels the re-attach quick pick (today it shows a raw task id).
+2. **"New tab" button in the chat header, tab surface only.** Needs a new `openInNewTab` RPC on
+   `UiService` (`proto/dirac/ui.proto` + a handler in `src/core/controller/ui/`), because the webview has
+   no generic "run a host command" path. The handler must stay host-agnostic: use a
+   `setTabOpener(fn)` / `openNewTab()` module the way WP2's `openTasks.setConflictHandler` works, with
+   `extension.ts` supplying the VS Code implementation. **`npm run protos` after editing the proto.**
+3. **Instance badge in the chat header** from `getSurface()` in `webview-ui/src/config/platform.config.ts`.
+4. **README "Surfaces" section**, including that a tab can be dragged to the secondary side bar.
+5. **A Goal started in a tab runs end to end** — verification only; no code unless it breaks.
+
+Acceptance script to write: `tools/wp3-acceptance.mjs`, same shape as wp2's (see its header comments for
+the three traps). Assertions: the tab's title text equals the start of the conversation after a task
+starts; the badge reads "Tab" in a tab and is absent/"Sidebar" in the sidebar; the header button opens a
+second tab with a NEW controller id; a Goal run in a tab reaches a terminal state.
+
+### WP4 note (do not start before WP3 is merged)
+WP4 needs a **captured fixture** first: run one real task using `use_subagents` with 3 subagents and one
+small Goal, then export the webview state to
+`webview-ui/src/features/agent-map/__tests__/fixtures/`. The builder is written against real data, so
+capture before delegating. deepseek has vision — send it the reference PNG named in the plan.
+
 ## How the work is delegated (this is the method — keep using it)
 - **Author:** `mcp__local-models__ask_ollama` with `model: "deepseek-v4.1-flash:cloud"`,
   `temperature 0.2`, `top_p 0.95`. **Reviewer:** `mcp__local-models__ask_glm` (:8001 GLM-5.3-Flash),
