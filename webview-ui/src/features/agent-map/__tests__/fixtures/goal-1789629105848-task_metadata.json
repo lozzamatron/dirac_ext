@@ -1,0 +1,22 @@
+{
+  "files_in_context": [],
+  "model_usage": [
+    {
+      "ts": 1789629105867,
+      "model_id": "glm-5.3-flash",
+      "model_provider_id": "openai",
+      "mode": "act"
+    }
+  ],
+  "environment_history": [
+    {
+      "ts": 1789629105853,
+      "os_name": "linux",
+      "os_version": "6.12.98-Unraid",
+      "os_arch": "x64",
+      "host_name": "code-server",
+      "host_version": "1.131.0",
+      "dirac_version": "0.5.13"
+    }
+  ]
+}
