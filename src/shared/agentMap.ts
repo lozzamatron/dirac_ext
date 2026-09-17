@@ -111,3 +111,59 @@ export function agentMapNodeDurationMs(node: AgentMapNode, now: number): number 
 	}
 	return Math.max(0, (node.endedAt ?? now) - node.startedAt)
 }
+
+/** One row of the rendered map: a node and how deep it sits under the root. */
+export interface AgentMapRow {
+	node: AgentMapNode
+	depth: number
+}
+
+/** Guards against a cycle in records assembled from separate files on disk. */
+const MAX_AGENT_MAP_DEPTH = 4
+
+/**
+ * Flattens the nodes into render order: each of the root's children, and immediately after it that
+ * child's own children, and so on.
+ *
+ * A Goal child task can run subagents of its own, and drawing those in the same flat column as the
+ * root's children says they are the root's — the map would be asserting a structure that is not the
+ * one that ran. The depth this returns is what the view indents by.
+ *
+ * @param nodes - A snapshot's nodes, `nodes[0]` the root.
+ * @returns Rows in render order, excluding the root. A node whose parent is not in the list, or that
+ *   sits below {@link MAX_AGENT_MAP_DEPTH}, is dropped rather than drawn in the wrong place.
+ */
+export function orderAgentMapRows(nodes: AgentMapNode[]): AgentMapRow[] {
+	const root = nodes[0]
+	if (!root) {
+		return []
+	}
+	const byParent = new Map<string, AgentMapNode[]>()
+	for (const node of nodes.slice(1)) {
+		const parentId = node.parentId ?? root.id
+		const siblings = byParent.get(parentId)
+		if (siblings) {
+			siblings.push(node)
+		} else {
+			byParent.set(parentId, [node])
+		}
+	}
+
+	const rows: AgentMapRow[] = []
+	const visited = new Set<string>()
+	const walk = (parentId: string, depth: number): void => {
+		if (depth > MAX_AGENT_MAP_DEPTH) {
+			return
+		}
+		for (const node of byParent.get(parentId) ?? []) {
+			if (visited.has(node.id)) {
+				continue
+			}
+			visited.add(node.id)
+			rows.push({ node, depth })
+			walk(node.id, depth + 1)
+		}
+	}
+	walk(root.id, 0)
+	return rows
+}

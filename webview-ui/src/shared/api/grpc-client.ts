@@ -4,6 +4,12 @@ import * as proto from "@shared/proto/index"
 export { DiracError, DiracErrorType } from "@/../../src/services/error/DiracError"
 import { ProtoBusClient, Callbacks } from "./grpc-client-base"
 
+export class AgentMapServiceClient extends ProtoBusClient {
+	static override serviceName: string = "dirac.AgentMapService"
+	static async getAgentMap(request: proto.dirac.StringRequest): Promise<proto.dirac.AgentMapSnapshotResponse> {
+		return this.makeUnaryRequest("getAgentMap", request, proto.dirac.StringRequest.toJSON, proto.dirac.AgentMapSnapshotResponse.fromJSON)
+	}
+}
 export class BrowserServiceClient extends ProtoBusClient {
 	static override serviceName: string = "dirac.BrowserService"
 	static async getBrowserConnectionInfo(request: proto.dirac.EmptyRequest): Promise<proto.dirac.BrowserConnectionInfo> {

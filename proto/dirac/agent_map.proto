@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package dirac;
+
+import "dirac/common.proto";
+
+option go_package = "github.com/dirac/grpc-go/dirac";
+option java_multiple_files = true;
+option java_package = "bot.dirac.proto";
+
+// Dirac EXT: the Agent Map for a conversation that is not live in this webview.
+//
+// The webview builds the map from the messages it already holds. That covers the conversation in
+// front of the user, but not a Goal's grandchildren (a child task that ran subagents of its own),
+// and not a run whose cards are no longer in the transcript. This service reads the same picture
+// back from the task's on-disk records.
+service AgentMapService {
+  // Assembles the Agent Map for a task id from its on-disk records.
+  rpc getAgentMap(StringRequest) returns (AgentMapSnapshotResponse);
+}
+
+message AgentMapSnapshotResponse {
+  // An AgentMapSnapshot (src/shared/agentMap.ts) as JSON.
+  //
+  // Carried as JSON for the same reason StateService carries stateJson: the shape is defined once in
+  // TypeScript and shared by both sides, and mirroring it here would leave two definitions to keep in
+  // step — with the proto one silently winning on the wire.
+  string snapshot_json = 1;
+}
