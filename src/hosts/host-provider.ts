@@ -1,4 +1,5 @@
 import { DiracWebviewProvider } from "@/core/webview"
+import type { WebviewSurface } from "@core/webview/InstanceRegistry"
 import { CommentReviewController } from "@/integrations/editor/CommentReviewController"
 import { DiffViewProvider } from "@/integrations/editor/DiffViewProvider"
 import { ITerminalManager } from "@/integrations/terminal/types"
@@ -154,7 +155,7 @@ export class HostProvider {
 /**
  * A function that creates DiracWebviewProvider instances
  */
-export type DiracWebviewProviderCreator = () => DiracWebviewProvider
+export type DiracWebviewProviderCreator = (surface?: WebviewSurface) => DiracWebviewProvider
 
 /**
  * A function that creates DiffViewProvider instances

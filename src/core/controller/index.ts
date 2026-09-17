@@ -20,6 +20,7 @@ import { DiracExtensionContext } from "@/shared/dirac"
 import { Logger } from "@/shared/services/Logger"
 import { SkillMetadata } from "@/shared/skills"
 import { StateManager } from "../storage/StateManager"
+import { openTasks } from "../task/OpenTaskRegistry"
 import { Task } from "../task"
 import type { PresentationSnapshot } from "../task/message-state"
 import { AuthController } from "./auth/AuthController"
@@ -182,6 +183,9 @@ export class Controller {
 		this.openAiCodexUsageUnsubscribe = undefined
 		await this.goalController.dispose()
 		await this.taskController.clearTask()
+		// Dirac EXT: a disposed controller must not keep holding its task, or that conversation
+		// could never be opened again in this window.
+		openTasks.releaseAllFor(this.id)
 
 		Logger.debug("Controller disposed")
 	}

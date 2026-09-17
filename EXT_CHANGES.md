@@ -124,6 +124,98 @@ Consequences for this fork:
 
 ---
 
+## WP2 — editor-tab instances, detach/re-attach, one-owner-per-task (branch `ext/wp2-editor-tabs`)
+
+Three new commands, all under the `Dirac EXT` category:
+`Open in New Tab`, `Move Conversation to a Tab`, `Re-attach a Background Task`.
+
+### New files
+- `src/core/task/OpenTaskRegistry.ts` — process-local owner map, `taskId -> controllerId`.
+  **Why it has to exist:** Dirac's SQLite `FolderLock` is keyed by a per-**process** instance address, so
+  two controllers inside the SAME extension host both acquire it and would interleave writes to one task.
+  `claim()` refuses a second owner, reports through a conflict handler and never throws; `release()` is a
+  no-op for a non-owner, so a losing view can never free the winner's live task.
+
+### Touched upstream files
+- `src/hosts/vscode/VscodeWebviewProvider.ts` — now hosts `WebviewView | WebviewPanel`.
+  `resolveWebviewView(view)` keeps the exact `vscode.WebviewViewProvider` signature (adding an options
+  parameter broke the interface) and delegates to `resolveSurface(viewOrPanel, { preserveTask })`.
+  Adds `getPanel/reveal/setTitle/detach/isDetached/reattach/setPanelCloseHandler` and a `disposed` guard.
+- `src/core/controller/task/TaskController.ts` — claims the task id immediately before
+  `tryAcquireTaskLockWithRetryFn`, releases it on every failure path and in `clearTask()`.
+- `src/core/controller/index.ts` — `dispose()` calls `openTasks.releaseAllFor(this.id)` as a backstop.
+- `src/extension.ts` — the three commands, `openDiracTab()`, the shared `isTaskMidTurn()` predicate, the
+  background-task status bar item and the conflict handler.
+- `package.json` — the three commands, the `dirac-ext.tab` webview type and its `when` clauses.
+
+### Two policies worth remembering
+- **Closing a tab must not kill work.** The close handler returns `detach` while the task is mid-turn
+  (panel gone, Controller and Task alive, status bar counts it) and `dispose` once it has settled.
+- **`isTaskMidTurn()`, not `status !== IDLE`.** A *finished* task sits at `COMPLETED` (or `CANCELLED`), so
+  the naive check calls every finished conversation busy — which is why the first cut of
+  `Move Conversation to a Tab` refused to move a conversation that had clearly ended.
+
+### Review findings fixed before merge (author `deepseek-v4.1-flash:cloud`, reviewer GLM-5.3-Flash on :8001)
+1. **[high] `detached` was never cleared on re-attach.** Re-attach goes through `resolveSurface`, not the
+   `reattach()` method, so a re-attached tab reported `isDetached() === true` forever and the status bar
+   counted a task the user was looking at. `resolveSurface` now clears the flag for every binding.
+2. **[high] a leaked claim was unrecoverable.** If anything after the claim threw (the SQLite lock retry
+   exhausting, settings failing to load), the task stayed claimed by a controller with no task and could
+   never be opened again in that window. Now released on every failure path, re-throwing the original
+   error. Guarded by a test that fails without the fix.
+3. **[medium] the background count lied once a detached task finished.** Both the count and the quick pick
+   now filter on `isDetached() && isTaskMidTurn(...)`; a settled detached instance is reaped (disposed,
+   which releases its claim so the conversation can be reopened from history), and while anything is
+   genuinely running the status bar re-checks every 5s so it corrects itself with no user action.
+4. **[medium] `reveal()` inverted `preserveFocus` for the sidebar** — `WebviewView.show()` takes
+   preserveFocus directly, and the code passed `!preserveFocus`, disagreeing with the panel branch.
+5. **[medium] the conflict message was a dead end for a detached owner** — `reveal()` silently does
+   nothing without a panel, so that case now names the re-attach command instead.
+6. **[low] `Move Conversation to a Tab` had a claim-free window** across the slow panel setup; the tab is
+   now created first, then the release and re-claim happen back to back.
+7. **[low]** `dispose()` could dispose an already-disposed panel (now try/caught), and a missing controller
+   id silently skipped the claim (now warns).
+
+The reviewer's two blocking unknowns were checked in the source, not guessed: `reinitExistingTaskFromId`
+does route through the claiming `initTask`, and `postMessageToWebview` uses the `webview` field rather
+than `getWebview()`, so tab instances receive events and a detached instance's sends no-op.
+
+### Verified in the browser (`dirac_ext/tools/wp2-acceptance.mjs`, evidence in `verification/wp2/`)
+- Sidebar + two editor tabs are **three distinct controller ids**, each reporting its own `surface`, with
+  the side bar still usable beside them.
+- **No cross-talk:** three conversations run at once and each transcript contains its own marker and
+  none of the other two.
+- **Opening a conversation another view owns** shows "already open in another Dirac EXT view", leaves
+  exactly one view holding it, and reveals the owner rather than duplicating it.
+- **Move Conversation to a Tab** moves it: exactly one view shows it afterwards, and it is the tab.
+- **Closing a tab mid-turn does not kill the work.** The close handler logs its decision
+  (`Tab closed -> detach (status=streaming_text, apiActive=true)`), the status bar shows
+  "Dirac EXT: 1 running in background", and re-attaching brings back the **same controller id** with the
+  conversation still streaming (`… 1022 1023 1024 …`) — after which the status bar stops counting it.
+- 38 assertions, 0 failures (`verification/wp2/acceptance-log.txt`).
+
+**Known rough edge for WP3:** the re-attach quick pick labels the task with its raw id
+(`1789624810548`), because tab titles and conversation names are WP3's work.
+
+### Two diagnostics kept in the code
+`Tab closed -> <action> (status=…, apiActive=…)` at log level, and the background-count inputs at debug
+level. Both exist because the detach/dispose decision and the background count are made from state the
+user cannot see, and a wrong outcome is otherwise undiagnosable after the fact — which is exactly what
+happened three times while verifying this WP.
+
+### ⚠️ A harness trap that produced two false results
+Playwright's actionability checks do not cross an iframe boundary. VS Code stacks all editor webviews at
+identical coordinates and hides the inactive ones via `visibility: hidden` on the **outer** iframe, so
+`fill()` aimed at a webview *behind* another one **succeeds** — the first run sent two of three prompts
+into the same conversation and then "failed" its own cross-talk assertions. The front surface must be
+identified from the parent document:
+`frame.parentFrame().frameElement()` → `getComputedStyle(el).visibility === "visible"`.
+The same run also carried a silently vacuous assertion (`innerText().replace(...).catch?.(...)` evaluates
+to `""` on a string, so a cross-check compared everything against the empty string) — a reminder that an
+assertion which cannot fail reports as a pass.
+
+---
+
 ## Build-host facts (not fork changes — they bite every WP)
 
 - **`npm run package` needs `unzip`, which this container does not have.** `scripts/prepare-extension-ripgrep-binaries.mjs`

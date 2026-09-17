@@ -145,6 +145,22 @@
         },
         "commands": [
             {
+                "command": "dirac-ext.openInNewTab",
+                "title": "Open in New Tab",
+                "category": "Dirac EXT",
+                "icon": "$(link-external)"
+            },
+            {
+                "command": "dirac-ext.openConversationInTab",
+                "title": "Move Conversation to a Tab",
+                "category": "Dirac EXT"
+            },
+            {
+                "command": "dirac-ext.reattachBackgroundTask",
+                "title": "Re-attach a Background Task",
+                "category": "Dirac EXT"
+            },
+            {
                 "command": "dirac-ext.plusButtonClicked",
                 "title": "New Task",
                 "icon": "$(add)"
@@ -263,6 +279,13 @@
         ],
         "keybindings": [
             {
+                "command": "dirac-ext.openInNewTab",
+                "key": "ctrl+shift+'",
+                "mac": "cmd+shift+'",
+                "win": "ctrl+shift+'",
+                "linux": "ctrl+shift+'"
+            },
+            {
                 "command": "editor.action.submitComment",
                 "key": "enter",
                 "when": "commentEditorFocused && commentController == dirac-ai-review && !commentIsEmpty"
@@ -287,6 +310,11 @@
         "menus": {
             "editor/title": [
                 {
+                    "command": "dirac-ext.openInNewTab",
+                    "group": "navigation@0",
+                    "when": "activeWebviewPanelId == dirac-ext.tab"
+                },
+                {
                     "command": "dirac-ext.acceptEdit",
                     "group": "navigation@1",
                     "when": "dirac.isFileUnderReview && !dirac.isFileModified"
@@ -303,6 +331,11 @@
                 }
             ],
             "view/title": [
+                {
+                    "command": "dirac-ext.openInNewTab",
+                    "group": "navigation@2",
+                    "when": "view == dirac-ext.SidebarProvider"
+                },
                 {
                     "command": "dirac-ext.plusButtonClicked",
                     "group": "navigation@1",

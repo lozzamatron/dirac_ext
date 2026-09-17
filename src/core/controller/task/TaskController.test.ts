@@ -338,6 +338,39 @@ describe("TaskController task isolation", () => {
 		sinon.assert.calledOnce(releaseTaskLock)
 	})
 
+	it("Dirac EXT releases the process-local task claim when initialization fails", async () => {
+		// A claim that outlived a failed init would refuse every later attempt to open that task in this
+		// window, with no way back for the user short of a reload.
+		const lockModule = require("../../task/TaskLockUtils")
+		sinon.stub(lockModule, "releaseTaskLock").resolves()
+		const { openTasks } = require("../../task/OpenTaskRegistry")
+		openTasks.clear()
+		const initializationFailure = new Error("settings failed")
+		const stateManager = {
+			refreshModelProviderPresetsFromDisk: sinon.stub(),
+			getGlobalSettingsKey: sinon.stub().returns(undefined),
+			getGlobalStateKey: sinon.stub().returns(undefined),
+			loadTaskSettings: sinon.stub().rejects(initializationFailure),
+		} as any
+		const controller = new (TaskController as any)(
+			{
+				controller: { id: "ctrl-claim-leak" },
+				stateManager,
+				clearTaskSettings: sinon.stub().resolves(),
+				postStateToWebview: sinon.stub().resolves(),
+			},
+			sinon.stub().resolves({ acquired: true, skipped: false }),
+			sinon.stub().resolves({ getPrimaryRoot: () => ({ path: "/workspace" }) }),
+		) as TaskController
+
+		await assert.rejects(
+			() => controller.initTask("test"),
+			(error: unknown) => error === initializationFailure,
+		)
+
+		assert.equal(openTasks.count(), 0)
+	})
+
 	it("captures task working configuration after persisted settings and runtime overrides", async () => {
 		const order: string[] = []
 		const workingConfiguration = {
