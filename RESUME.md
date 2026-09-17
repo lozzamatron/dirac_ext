@@ -9,11 +9,11 @@ upstream pinned at `041fce18` (v0.5.13).
 | `ext/wp2-editor-tabs` | merged into `ext/main`; keep for history |
 | `ext/wp3-tab-polish` | merged into `ext/main`; keep for history |
 | `ext/wp4-agent-map` | merged into `ext/main`; keep for history |
+| `ext/wp5-agent-map-backend` | merged into `ext/main`; keep for history |
 
-**Next work package: WP5** (Agent Map v1.5 — the backend: a `runs.json` sidecar in
-`SubagentRunRecorder`, an `AgentMapService.getAgentMap(taskId)` RPC, Goal child nesting to depth 2, and
-the webview falling back to the RPC for tasks that are not live). Spec: `IMPLEMENTATION_PLAN.md` §3.
-WP4's fixtures already contain a Goal whose children ran as separate tasks — reuse them.
+**Next work packages, in HIS hands:** WP5b (the optional fleet map — decide whether it is wanted) and
+WP6/WP7 (TokenSlayer). **WP6 was deliberately left untouched**: it changes his own Claude Code and Kilo
+configuration, and `IMPLEMENTATION_PLAN.md` §7 still has an open question about TokenSlayer's role.
 
 ## Shipped and verified
 - **WP0** — fork identity `lozza.dirac-ext` ("Dirac EXT"), side-by-side with upstream Dirac, sharing
@@ -97,9 +97,32 @@ runs. Full detail in `dirac-ext/EXT_CHANGES.md` § WP4.
   VS Code's hit test can resolve a click inside a webview to the iframe itself after the workbench
   re-lays-out (a theme change, a tab switch) — fall back to a DOM click, and say so in the log.
 
+## WP5 — DONE (merged 2026-09-17)
+Agent Map v1.5, the backend: a versioned `runs.json` sidecar written beside the subagent Markdown, an
+`AgentMapService.getAgentMap(taskId)` RPC that assembles a snapshot from a task's records (including,
+for each Goal child, that child's OWN runs), and a webview merge that adds what the transcript
+structurally cannot contain. Acceptance **21 assertions** (`dirac-ext/verification/wp5/`), fork unit
+tests 36 passing, webview agent-map tests 32 passing. Full detail in `dirac-ext/EXT_CHANGES.md` § WP5.
+
+### What WP5 taught
+- **Two sources of the same truth need a merge RULE, not a merge by id.** The live map keys a subagent
+  node by the CARD that renders it, the disk map by the recorded RUN id, so an id-based merge draws
+  every finished run twice. Decide what each source is authoritative for and take only that.
+- **Depth has to be visible, not just present.** The grandchildren reached the map and were drawn in
+  the same flat column as the Goal's own children — the map asserting a structure that never ran.
+- **Concurrent writers to one file need the queue around the READ too.** Several subagents share one
+  `runs.json`; serializing only the write still loses a run.
+- **A partial record must merge, not replace.** A run is written twice — identity and prompt at the
+  start, status and usage at the end — so a replace empties the drawer of everything the first write
+  carried. And an update for a run that was never started is DROPPED: inventing an agent identity to
+  satisfy the type would put a fabricated run on the map, drawn as real.
+- 🔴 **`innerText` on a node card starts with the screen-reader-only status line** added in WP4, so
+  `innerText.split("\n")[0]` reports every node as having the same name. Read the card's `title`
+  attribute instead.
+
 ## Overnight run started 2026-09-17 ~01:50 (owner asleep; work autonomously, do not block on him)
 
-Order: **WP3 ✅ → WP4 ✅ → (WP5 if time)**. Merge each to `ext/main` and push before starting the next, so
+Order: **WP3 ✅ → WP4 ✅ → WP5 ✅**. Merge each to `ext/main` and push before starting the next, so
 an interruption never leaves the tree half-done. Do not touch WP6 (it changes HIS Claude Code / Kilo config
 and §7 still has an open question about TokenSlayer's role) — leave it for him.
 

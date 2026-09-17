@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils"
 import { Navbar } from "@/shared/ui/Navbar"
 import { AgentMapOverlay } from "@/features/agent-map/AgentMapOverlay"
 import { buildAgentMap } from "@/features/agent-map/buildAgentMap"
+import { mergeAgentMaps } from "@/features/agent-map/mergeAgentMaps"
+import { useDiskAgentMap } from "@/features/agent-map/useDiskAgentMap"
 import type { AgentMapSnapshot } from "@shared/agentMap"
 import { ChatLayout } from "./components/ChatLayout"
 import { SurfaceStrip } from "./components/SurfaceStrip"
@@ -98,6 +100,14 @@ export const ModularChatView: React.FC<ChatViewProps> = ({ isHidden, showAnnounc
 			contextTokens: contextTokens && contextTokens > 0 ? contextTokens : undefined,
 		})
 	}, [agentMapOpen, task, messages, goal, selectedModelId, lastApiReqInfo, presentationSurfaceId])
+
+	// The host reads what the transcript structurally cannot show — a Goal child's own subagent runs,
+	// and any run at all once the messages are gone. See mergeAgentMaps for what each source owns.
+	const diskAgentMap = useDiskAgentMap(agentMapOpen, presentationSurfaceId ?? "")
+	const mergedAgentMap = useMemo(
+		() => mergeAgentMaps(agentMapSnapshot, diskAgentMap),
+		[agentMapSnapshot, diskAgentMap],
+	)
 
 	// Ctrl/Cmd+Shift+M toggles the map while this webview has focus. It is handled here rather than
 	// as a VS Code keybinding because WP4 adds no extension-host code, and a webview binding works
@@ -233,7 +243,7 @@ export const ModularChatView: React.FC<ChatViewProps> = ({ isHidden, showAnnounc
 					<div className="px-4">{InputSection.shouldRender(context) && InputSection.render(context)}</div>
 				</div>
 			</div>
-			{agentMapOpen && <AgentMapOverlay onClose={closeAgentMap} snapshot={agentMapSnapshot} />}
+			{agentMapOpen && <AgentMapOverlay onClose={closeAgentMap} snapshot={mergedAgentMap} />}
 		</ChatLayout>
 	)
 }

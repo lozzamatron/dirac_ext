@@ -1,9 +1,11 @@
 import fs from "node:fs/promises"
 import * as path from "node:path"
 import { ensureTaskDirectoryExists } from "@core/storage/directoryEnsurers"
+import type { AgentMapUsage } from "@shared/agentMap"
 import { SubagentExecutionStatus } from "@shared/ExtensionMessage"
 import type { SubagentIdentity } from "@shared/subagents"
 import { Logger } from "@shared/services/Logger"
+import { SUBAGENT_RUNS_FILE, upsertSubagentRun } from "./SubagentRunIndex"
 
 export type SubagentRunPhase =
 	| "starting"
@@ -38,6 +40,7 @@ export interface SubagentRunArtifactPaths {
 	transcriptPath: string
 	diagnosticsPath: string
 	indexPath: string
+	runsPath: string
 }
 
 export interface SubagentTranscriptEvent {
@@ -62,6 +65,9 @@ export class SubagentRunRecorder {
 	private static readonly appendTails = new Map<string, Promise<void>>()
 	private transcriptSequence = 0
 	private diagnosticSequence = 0
+	// Captured once at construction: the terminal record needs the run's start
+	// time, and re-reading the clock there would measure the wrong thing.
+	private readonly startedAt = Date.now()
 
 	private constructor(
 		private readonly options: SubagentRunRecorderOptions,
@@ -78,6 +84,7 @@ export class SubagentRunRecorder {
 			transcriptPath: path.join(runDirectory, "transcript.md"),
 			diagnosticsPath: path.join(runDirectory, "diagnostics.md"),
 			indexPath: path.join(taskDirectory, "subagents", "index.md"),
+			runsPath: path.join(taskDirectory, "subagents", SUBAGENT_RUNS_FILE),
 		}
 		const recorder = new SubagentRunRecorder(options, paths)
 		await recorder.initialize()
@@ -107,6 +114,13 @@ export class SubagentRunRecorder {
 			this.recordTranscript({ type: "terminal", details: terminalDetails }),
 			this.recordDiagnostic({ type: "terminal", phase: terminalPhase(status), details: terminalDetails }),
 			this.append(this.paths.indexPath, formatIndexRecord(this.options, this.paths, terminalDetails)),
+			upsertSubagentRun(this.paths.runsPath, this.options.taskId, {
+				runId: this.paths.runId,
+				status: terminalSidecarStatus(status),
+				endedAt: Date.now(),
+				usage: extractUsage(details),
+				error: typeof details.error === "string" ? details.error : undefined,
+			}),
 		])
 	}
 
@@ -124,6 +138,18 @@ export class SubagentRunRecorder {
 			fs.writeFile(this.paths.transcriptPath, formatTranscriptHeader(this.options, this.paths), { encoding: "utf8", flag: "wx" }),
 			fs.writeFile(this.paths.diagnosticsPath, formatDiagnosticsHeader(this.options, this.paths), { encoding: "utf8", flag: "wx" }),
 			this.append(this.paths.indexPath, formatIndexRecord(this.options, this.paths, { status: "started" })),
+			upsertSubagentRun(this.paths.runsPath, this.options.taskId, {
+				runId: this.paths.runId,
+				agentId: this.options.agent.id,
+				agentName: this.options.agent.name,
+				taskTitle: this.options.taskTitle,
+				prompt: this.options.prompt,
+				status: "running",
+				startedAt: this.startedAt,
+				modelId: this.options.modelId,
+				providerId: this.options.providerId,
+				transcriptPath: relativePath(this.paths.runsPath, this.paths.transcriptPath),
+			}),
 		])
 	}
 
@@ -162,6 +188,46 @@ function terminalPhase(status: SubagentExecutionStatus): SubagentRunPhase {
 	if (status === SubagentExecutionStatus.COMPLETED) return "completed"
 	if (status === SubagentExecutionStatus.FAILED) return "failed"
 	return "cancelled"
+}
+
+// A terminal record that is not terminal is a bug elsewhere; guessing
+// "completed" would put a lie on disk, so anything unknown stays "running".
+function terminalSidecarStatus(status: SubagentExecutionStatus): "running" | "completed" | "failed" | "cancelled" {
+	if (status === SubagentExecutionStatus.COMPLETED) return "completed"
+	if (status === SubagentExecutionStatus.FAILED) return "failed"
+	if (status === SubagentExecutionStatus.CANCELLED) return "cancelled"
+	return "running"
+}
+
+// Reads usage out of the untyped terminal details defensively. Returns undefined
+// when there are no stats at all — a run with no measured usage must have no
+// usage field rather than a row of zeroes that reads as a real measurement.
+function extractUsage(details: Record<string, unknown>): AgentMapUsage | undefined {
+	const stats = details.stats
+	if (typeof stats !== "object" || stats === null || Array.isArray(stats)) {
+		return undefined
+	}
+	const record = stats as Record<string, unknown>
+	const inputTokens = readFiniteNumber(record.inputTokens)
+	const outputTokens = readFiniteNumber(record.outputTokens)
+	const cacheReadTokens = readFiniteNumber(record.cacheReadTokens)
+	const cacheWriteTokens = readFiniteNumber(record.cacheWriteTokens)
+	if (
+		inputTokens === undefined ||
+		outputTokens === undefined ||
+		cacheReadTokens === undefined ||
+		cacheWriteTokens === undefined
+	) {
+		return undefined
+	}
+	const totalCost = readFiniteNumber(record.totalCost)
+	return totalCost === undefined
+		? { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens }
+		: { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, totalCost }
+}
+
+function readFiniteNumber(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isFinite(value) ? value : undefined
 }
 
 function formatTranscriptHeader(options: SubagentRunRecorderOptions, paths: SubagentRunArtifactPaths): string {

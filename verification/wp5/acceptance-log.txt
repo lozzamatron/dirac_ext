@@ -1,0 +1,34 @@
+workbench: Agent Manager - dirac_ext - code-server  (2026-09-17T08:36:48.791Z)
+PASS: a tab accepted the subagent prompt
+PASS: the subagent task ran to completion
+subagent task id: 1789634219022
+PASS: a task directory was created for it
+PASS: the task wrote a machine-readable sidecar (/config/.dirac/data/tasks/1789634219022/subagents/runs.json)
+runs.json: {"version":1,"taskId":"1789634219022","runs":[{"runId":"1789634219867-2-laplace-g6m671","agentId":2,"agentName":"Laplace","taskTitle":"Reply ALPHA","prompt":"Reply with exactly the word ALPHA. Do not use any tools, do not read or modify files, do not run commands.","status":"completed","startedAt":1789634219868,"modelId":"glm-5.3-flash","providerId":"openai","transcriptPath":"1789634219867-2-laplace-g6m671/transcript.md","endedAt":1789634221485,"usage":{"inputTokens":588,"outputTokens":148,"cacheReadTokens":9728,"cacheWriteTokens":0,"totalCost":0}},{"runId":"1789634219868-3-euler-4p4b0t","agen
+PASS: the sidecar is valid, versioned JSON
+PASS: it holds both runs
+PASS: a settled run is recorded as completed (got completed)
+PASS: with both timestamps
+PASS: and the usage the terminal record measured
+PASS: the terminal write MERGED, keeping the agent name
+PASS: ...and the prompt the run started with
+PASS: a tab accepted the Goal objective
+  goal running (60s), status="Goal status: working. Started"
+  goal running (120s), status="Goal status: working. Started"
+goal terminal status: "Goal status: achieved"
+PASS: the Goal reached a terminal state
+new task dirs: ["1789634235281","1789634236700","1789634301452"]
+PASS: one of them is the Goal itself
+goal children: [{"id":"1789634236700","role":"task","status":"completed","title":"Run GAMMA/DELTA subagents"},{"id":"1789634301452","role":"verification","status":"completed","title":"Verify Goal: Confirm exactly one child task was started, it ran exactly two subagents in one use_subagents call (first replied exactly GAMMA, second exactly DELTA), and no files were read/created/modified and no commands run by the child or its subagents."}]
+PASS: the Goal delegated to at least one child task
+child task that ran subagents: 1789634236700
+PASS: a CHILD task ran subagents of its own and recorded them on disk
+grandchildren on disk: ["Reply with GAMMA","Reply with DELTA"]
+map nodes: ["Run GAMMA/DELTA subagents","Reply with GAMMA","Reply with DELTA","Verify Goal: Confirm exactly one child task was started, it ran exactly two subagents in one use_subagents call (first replied exactly GAMMA, second exactly DELTA), and no files were read/created/modified and no commands run by the child or its subagents."]
+PASS: the map shows a grandchild the transcript cannot contain (expected one of ["Reply with GAMMA","Reply with DELTA"], got ["Run GAMMA/DELTA subagents","Reply with GAMMA","Reply with DELTA","Verify Goal: Confirm exactly one child task was started, it ran exactly two subagents in one use_subagents call (first replied exactly GAMMA, second exactly DELTA), and no files were read/created/modified and no commands run by the child or its subagents."])
+PASS: the Goal's child task is on the map too (Run GAMMA/DELTA subagents)
+PASS: no node is drawn twice — the live and disk maps key runs differently (got ["Run GAMMA/DELTA subagents","Reply with GAMMA","Reply with DELTA","Verify Goal: Confirm exactly one child task was started, it ran exactly two subagents in one use_subagents call (first replied exactly GAMMA, second exactly DELTA), and no files were read/created/modified and no commands run by the child or its subagents."])
+node depths: [{"depth":0,"title":"Run GAMMA/DELTA subagents"},{"depth":1,"title":"Reply with GAMMA"},{"depth":1,"title":"Reply with DELTA"},{"depth":0,"title":"Verify Goal: Confirm exactly one child task was started, it ran exactly two subagents in one use_subagents call (first replied exactly GAMMA, second exactly DELTA), and no files were read/created/modified and no commands run by the child or its subagents."}]
+PASS: a grandchild is drawn one level in, under its own parent
+PASS: ...and the Goal's child task stays at the top level
+RESULT: 0 failing assertion(s)

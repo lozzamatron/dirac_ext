@@ -374,6 +374,72 @@ modal; status readable as text; and the whole thing re-rendered in a LIGHT theme
 its text dark and its node borders visible — i.e. reading `--vscode-*` rather than hard-coded colours.
 
 
+## WP5 — Agent Map v1.5: the backend (branch `ext/wp5-agent-map-backend`)
+
+WP4's map is built from the messages the webview holds. That cannot show a **Goal child task's own
+subagent runs** — a child task's cards never enter the parent's transcript — nor any run whose cards
+have left the conversation. This work package records the runs as machine-readable JSON and adds an
+RPC that reads the same picture back from disk.
+
+### New files
+- `src/core/task/tools/subagent/SubagentRunIndex.ts` — the versioned sidecar
+  `<taskDir>/subagents/runs.json`, plus its reader and a serialized upsert. **Markdown is for humans;
+  it is not a data format**: `transcript.md`, `diagnostics.md` and `index.md` stay exactly as they
+  were, and this sits beside them.
+- `src/core/controller/agentMap/getAgentMap.ts` — the `AgentMapService.getAgentMap` handler.
+- `webview-ui/src/features/agent-map/mergeAgentMaps.ts` and `useDiskAgentMap.ts` — the webview half.
+- Tests: `src/core/task/tools/subagent/__tests__/SubagentRunIndex.spec.ts` (9 cases, against a real
+  temp directory — a mocked filesystem would only prove the module calls the functions I expected) and
+  `webview-ui/src/features/agent-map/__tests__/mergeAgentMaps.test.ts` (8 cases).
+- `proto/dirac/agent_map.proto` — `AgentMapService`. The snapshot travels as JSON in a single
+  `snapshot_json` field, for the same reason `StateService` carries `stateJson`: the shape is defined
+  once in TypeScript and shared by both halves, and mirroring it in proto would leave two definitions
+  to keep in step — with the proto one silently winning on the wire.
+
+### Touched upstream files
+- `src/core/task/tools/subagent/SubagentRunRecorder.ts` — writes the sidecar when a run starts and
+  again when it settles. Additive: no existing method, helper or output changed.
+- `webview-ui/src/features/modular-ui/chat/ModularChatView.tsx` — asks for the disk snapshot when the
+  overlay opens and merges it.
+
+### Two decisions worth keeping
+- **The sidecar's upsert is a MERGE, and it is serialized per file path.** Several subagents of one
+  task run concurrently and share one `runs.json`, so two interleaved read-modify-write cycles would
+  lose a run; the module chains every operation for a path onto a promise tail, exactly the way the
+  recorder already chains its Markdown appends. And a run is written twice — identity and prompt at
+  the start, status and usage at the end — so a replace would empty the map's drawer of everything
+  the first write carried. An update for an unknown run that lacks the identity fields is **dropped**,
+  not stored with invented values: a fabricated run would be drawn on the map as real.
+- **The two maps are not merged by id.** The live map keys a subagent node by the CARD that renders
+  it, the disk map by the recorded RUN id, so merging by id would draw every finished run twice.
+  Instead each source is authoritative for what only it can see: grandchildren always come from disk,
+  and the disk children are used wholesale only when the live map found none — the "reopened from
+  history, the cards are gone" case — and even then the LIVE root survives, because it is the one
+  carrying the model and the context size.
+
+### Depth had to become visible, not just present
+The first browser run proved the grandchildren reach the map — and showed them in the same flat column
+as the Goal's own children, which says they are the root's agents. A map that draws a structure that
+never ran is worse than one that omits it. `orderAgentMapRows()` (in `src/shared/agentMap.ts`, so a
+later host-side renderer orders identically) now flattens the nodes into render order — each child
+followed immediately by its own children — and the overlay indents by the depth it returns. It drops a
+node whose parent is not on screen rather than drawing it in the wrong place, and stops at a depth cap
+so records assembled from separate files cannot recurse.
+
+### Review (author GLM-5.3-Flash on :8001, reviewer Qwen 3.6 27B on :8003, `enable_thinking: false`)
+"SHIP WITH FIXES", 10 findings; four of them the reviewer talked itself out of inside its own write-up
+(the promise-tail leak, and three walks through `mergeAgentMaps` each ending "this is correct"). Taken:
+- `useDiskAgentMap` kept the previous task's snapshot in state while the new request was in flight, so
+  one conversation's grandchildren could be drawn under another conversation's title;
+- `getAgentMap` trusted its task id — an empty one would have had `ensureTaskDirectoryExists` create a
+  junk directory in the user's task store;
+- a disk node whose id collided with a live one is now filtered out rather than rendered as a
+  duplicate React key.
+Rejected: a concurrency limiter on the per-child reads (a Goal's children are a handful, each read is
+one small JSON file, and the alternative is a dependency or hand-rolled chunking for no measured
+problem) and a timeout around `ensureTaskDirectoryExists` (speculative).
+
+
 ## Build-host facts (not fork changes — they bite every WP)
 
 - **`npm run package` needs `unzip`, which this container does not have.** `scripts/prepare-extension-ripgrep-binaries.mjs`

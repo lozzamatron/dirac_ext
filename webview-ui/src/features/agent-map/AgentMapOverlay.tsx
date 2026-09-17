@@ -6,7 +6,7 @@ import { XIcon } from "lucide-react"
 import type React from "react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { AgentMapSnapshot } from "@shared/agentMap"
-import { isTerminalAgentMapStatus } from "@shared/agentMap"
+import { isTerminalAgentMapStatus, orderAgentMapRows } from "@shared/agentMap"
 import { Button } from "@/shared/ui/button"
 import { AgentMapDrawer } from "./AgentMapDrawer"
 import { AgentMapConnector } from "./connectors"
@@ -21,7 +21,11 @@ export const AgentMapOverlay: React.FC<{
 	const panelRef = useRef<HTMLDivElement>(null)
 
 	const root = snapshot.nodes[0]
-	const children = useMemo(() => snapshot.nodes.slice(1), [snapshot.nodes])
+	// Render order, not storage order: a Goal child's own subagents follow that child and are
+	// indented under it. Drawn flat they would read as the root's agents, which is a structure that
+	// never ran.
+	const rows = useMemo(() => orderAgentMapRows(snapshot.nodes), [snapshot.nodes])
+	const children = useMemo(() => rows.map((row) => row.node), [rows])
 
 	// Derived boolean, not the node array: the interval effect must not restart
 	// (and never re-fire) just because a parent re-rendered with a new array.
@@ -196,20 +200,25 @@ export const AgentMapOverlay: React.FC<{
 					{/* Every cell is placed EXPLICITLY. Auto-placement flows around the root's row span in
 					    ways that depend on source order, and it put the third card inside the 40px
 					    connector column — one word per line — the first time this was driven in a browser. */}
-					{children.map((child, index) => (
+					{rows.map((row, index) => (
 						<AgentMapConnectorCell
-							key={`connector-${child.id}`}
+							key={`connector-${row.node.id}`}
 							isFirst={index === 0}
-							isLast={index === children.length - 1}
+							isLast={index === rows.length - 1}
 							row={index + 1}
 						/>
 					))}
-					{children.map((child, index) => (
-						<div key={child.id} style={{ gridColumn: 3, gridRow: index + 1 }}>
+					{rows.map((row, index) => (
+						<div
+							key={row.node.id}
+							// Indent by depth so a Goal child's own subagents visibly hang off that child
+							// rather than off the root.
+							style={{ gridColumn: 3, gridRow: index + 1, marginLeft: row.depth * 24 }}
+							data-agent-map-depth={row.depth}>
 							<AgentMapNodeCard
-								node={child}
+								node={row.node}
 								now={now}
-								isSelected={selectedId === child.id}
+								isSelected={selectedId === row.node.id}
 								onSelect={setSelectedId}
 							/>
 						</div>
