@@ -8,9 +8,12 @@ upstream pinned at `041fce18` (v0.5.13).
 | `ext/main` | WP0 + WP1 + WP1b + WP2 + **WP3** merged, pushed, **verified in the browser** |
 | `ext/wp2-editor-tabs` | merged into `ext/main`; keep for history |
 | `ext/wp3-tab-polish` | merged into `ext/main`; keep for history |
+| `ext/wp4-agent-map` | merged into `ext/main`; keep for history |
 
-**Next work package: WP4** (Agent Map v1, webview-only). Spec: `IMPLEMENTATION_PLAN.md` §3.
-**Capture the fixture first** — see the WP4 note below; the builder is written against real data.
+**Next work package: WP5** (Agent Map v1.5 — the backend: a `runs.json` sidecar in
+`SubagentRunRecorder`, an `AgentMapService.getAgentMap(taskId)` RPC, Goal child nesting to depth 2, and
+the webview falling back to the RPC for tasks that are not live). Spec: `IMPLEMENTATION_PLAN.md` §3.
+WP4's fixtures already contain a Goal whose children ran as separate tasks — reuse them.
 
 ## Shipped and verified
 - **WP0** — fork identity `lozza.dirac-ext` ("Dirac EXT"), side-by-side with upstream Dirac, sharing
@@ -68,9 +71,35 @@ Tab titles that follow the conversation, the tab-only surface strip (badge + new
   it achieved. **Filter by the OUTER-iframe visibility already used to find the front surface**, and
   assert on a stable attribute (`aria-label^="Goal status:"`) rather than a word in a text blob.
 
+## WP4 — DONE (merged 2026-09-17)
+Agent Map v1: a modal overlay with the conversation as a root node, one child node per subagent run
+and per Goal child task, elbow connectors, a detail drawer, a button in the chat strip and
+`Ctrl/Cmd+Shift+M`. **Webview-only** — no extension-host code at all. Acceptance **33 assertions**
+(`dirac-ext/verification/wp4/`), builder unit tests 19 passing against fixtures captured from real
+runs. Full detail in `dirac-ext/EXT_CHANGES.md` § WP4.
+
+### What WP4 taught
+- 🔴 **`ui_messages.jsonl` is an operation LOG, not a message array.** Every subagent's final status,
+  usage and trajectory arrives as a later `patch_card`, so a reader of the `create` records alone sees
+  three agents stuck at "running" with no usage. Replay it through the REAL chat store
+  (`applyPresentationBatch`) — and seed BOTH of its gates first (`presentationSurfaceId` must match the
+  batch, and offsets must continue from `presentationOffset + 1`) or the replay silently yields nothing.
+- **A guard that fails loudly is worth writing before the assertions it protects.** The replay helper
+  asserts a non-empty message list up front; that is what turned "every assertion vacuously passes"
+  into one clear failure naming the store's own rejection reason.
+- 🔴 **CSS grid auto-placement is not deterministic enough to trust here.** A root spanning every child
+  row put the third card inside the 40px connector column, one word per line. Place every cell
+  explicitly, by column AND row.
+- **Assert the property, not the model's wording.** Subagent task titles are generated, so
+  `"Reply ALPHA"` became `"Reply with ALPHA"` on the next run and three assertions went red on correct
+  code. Assert that each node names its own job and is not the `"Agent: job"` card header.
+- **Two more browser traps:** headings uppercased by CSS come back from `innerText` UPPERCASE, and
+  VS Code's hit test can resolve a click inside a webview to the iframe itself after the workbench
+  re-lays-out (a theme change, a tab switch) — fall back to a DOM click, and say so in the log.
+
 ## Overnight run started 2026-09-17 ~01:50 (owner asleep; work autonomously, do not block on him)
 
-Order: **WP3 ✅ → WP4 → (WP5 if time)**. Merge each to `ext/main` and push before starting the next, so
+Order: **WP3 ✅ → WP4 ✅ → (WP5 if time)**. Merge each to `ext/main` and push before starting the next, so
 an interruption never leaves the tree half-done. Do not touch WP6 (it changes HIS Claude Code / Kilo config
 and §7 still has an open question about TokenSlayer's role) — leave it for him.
 
@@ -94,11 +123,11 @@ the three traps). Assertions: the tab's title text equals the start of the conve
 starts; the badge reads "Tab" in a tab and is absent/"Sidebar" in the sidebar; the header button opens a
 second tab with a NEW controller id; a Goal run in a tab reaches a terminal state.
 
-### WP4 note (do not start before WP3 is merged)
-WP4 needs a **captured fixture** first: run one real task using `use_subagents` with 3 subagents and one
-small Goal, then export the webview state to
-`webview-ui/src/features/agent-map/__tests__/fixtures/`. The builder is written against real data, so
-capture before delegating. deepseek has vision — send it the reference PNG named in the plan.
+### WP4 note — done
+The fixtures are captured and committed (`tools/wp4-capture-fixture.mjs` re-captures them). Note that
+`deepseek-v4.1-flash:cloud` could NOT be used as the vision-capable author the plan assumed — see the
+delegation section below. The reference screenshot was described in words instead, and the layout was
+checked against `reference_images/Screenshot 2026-09-14 083135.png` in the browser.
 
 ## How the work is delegated (this is the method — keep using it)
 - **Author:** `mcp__local-models__ask_ollama` with `model: "deepseek-v4.1-flash:cloud"`,
