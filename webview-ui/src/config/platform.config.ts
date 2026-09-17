@@ -40,6 +40,8 @@ type PlatformConfigJson = {
 
 type PlatformConfigs = Record<string, PlatformConfigJson>
 
+export type DiracSurface = "sidebar" | "tab"
+
 // Runtime configuration injected into the webview HTML by the host (see
 // DiracWebviewProvider.getHtmlContent). This lets host-specific user settings
 // (e.g. a custom Plan/Act toggle shortcut from VSCode `dirac.*` settings)
@@ -47,6 +49,10 @@ type PlatformConfigs = Record<string, PlatformConfigJson>
 // going through the gRPC state pipeline.
 export interface DiracRuntimeConfig {
 	planActToggleShortcut?: string
+	// Identifies which webview instance this app belongs to; the fork allows several at once.
+	instanceId?: string
+	// Which surface this webview is rendered in.
+	surface?: DiracSurface
 }
 
 // Global type declarations for postMessage and vscode API
@@ -85,6 +91,20 @@ export function resolveTogglePlanActKeys(override: string | undefined, fallback:
  */
 function getInjectedTogglePlanActKeys(): string | undefined {
 	return typeof window !== "undefined" ? window.__DIRAC_CONFIG__?.planActToggleShortcut : undefined
+}
+
+/**
+ * Reads the host-injected instance id, if present.
+ */
+export function getInstanceId(): string | undefined {
+	return typeof window !== "undefined" ? window.__DIRAC_CONFIG__?.instanceId : undefined
+}
+
+/**
+ * Reads the host-injected surface, defaulting to "sidebar" when absent.
+ */
+export function getSurface(): DiracSurface {
+	return typeof window !== "undefined" ? window.__DIRAC_CONFIG__?.surface ?? "sidebar" : "sidebar"
 }
 
 // Initialize the vscode API if available

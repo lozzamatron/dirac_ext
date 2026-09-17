@@ -1,5 +1,6 @@
 import * as vscode from "vscode"
 import { sendAddToInputEvent } from "@/core/controller/ui/subscribeToAddToInput"
+import { DiracWebviewProvider } from "@/core/webview"
 import { getErrorMessage } from "@/shared/errors"
 import { Logger } from "@/shared/services/Logger"
 import { CommentThreadManager } from "./VscodeCommentThreadManager"
@@ -93,7 +94,14 @@ ${conversation}
 
 Please continue helping the user with their question about this code.`
 
-		await sendAddToInputEvent(contextMessage)
+		// No controller is in scope here (this is a VS Code comment-thread handler), so the review
+		// conversation goes to the webview the user was last working in.
+		const target = DiracWebviewProvider.getLastActiveInstance()
+		if (!target) {
+			Logger.warn("[CommentReplyHandler] No Dirac webview instance to send the review conversation to")
+			return
+		}
+		await sendAddToInputEvent(target.controller.id, contextMessage)
 	}
 
 	async revealCommentInDocument(thread: vscode.CommentThread): Promise<void> {

@@ -41,7 +41,7 @@ export async function addToDirac(controller: Controller, request: CommandContext
 	} else if (notebookContext) {
 		await controller.initTask(input)
 	} else {
-		await sendAddToInputEvent(input)
+		await sendAddToInputEvent(controller.id, input)
 	}
 
 	Logger.log("addToDirac", request.selectedText, filePath, request.language)

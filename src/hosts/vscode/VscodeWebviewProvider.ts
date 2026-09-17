@@ -45,7 +45,11 @@ export class VscodeDiracWebviewProvider extends DiracWebviewProvider implements 
 	protected override getInjectedConfig(): Record<string, unknown> {
 		const config = vscode.workspace.getConfiguration("dirac")
 		const planActToggleShortcut = config.get<string>("planActToggleShortcut")?.trim()
-		return planActToggleShortcut ? { planActToggleShortcut } : {}
+		return {
+			...(planActToggleShortcut ? { planActToggleShortcut } : {}),
+			instanceId: this.controller.id,
+			surface: this.surface,
+		}
 	}
 
 	override isVisible() {
@@ -93,7 +97,8 @@ export class VscodeDiracWebviewProvider extends DiracWebviewProvider implements 
 			async () => {
 				if (this.webview?.visible) {
 					// View becoming visible should not steal editor focus.
-					await sendShowWebviewEvent(true)
+					this.markActive()
+					await sendShowWebviewEvent(this.controller.id, true)
 				}
 			},
 			null,

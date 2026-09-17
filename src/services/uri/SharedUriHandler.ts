@@ -30,10 +30,14 @@ export class SharedUriHandler {
 				}),
 		)
 
-		const visibleWebview = DiracWebviewProvider.getVisibleInstance()
+		// With several instances (sidebar + editor tabs) an invisible sidebar is no longer a reason to
+		// drop a URI: auth callbacks belong to whichever instance started the flow, and a /task link
+		// belongs to the sidebar.
+		const sidebarWebview = DiracWebviewProvider.getSidebarInstance()
+		const targetWebview = DiracWebviewProvider.getLastActiveInstance() ?? sidebarWebview
 
-		if (!visibleWebview) {
-			Logger.warn("SharedUriHandler: No visible webview found")
+		if (!targetWebview) {
+			Logger.warn("SharedUriHandler: No Dirac webview instance found")
 			return false
 		}
 
@@ -42,7 +46,7 @@ export class SharedUriHandler {
 				case "/openrouter": {
 					const code = query.get("code")
 					if (code) {
-						await visibleWebview.controller.completeOpenRouterAuth(code)
+						await targetWebview.controller.completeOpenRouterAuth(code)
 						return true
 					}
 					Logger.warn("SharedUriHandler: Missing code parameter for OpenRouter callback")
@@ -51,7 +55,7 @@ export class SharedUriHandler {
 				case "/requesty": {
 					const code = query.get("code")
 					if (code) {
-						await visibleWebview.controller.completeRequestyAuth(code)
+						await targetWebview.controller.completeRequestyAuth(code)
 						return true
 					}
 					Logger.warn("SharedUriHandler: Missing code parameter for Requesty callback")
@@ -60,7 +64,7 @@ export class SharedUriHandler {
 				case TASK_URI_PATH: {
 					const prompt = query.get("prompt")
 					if (prompt) {
-						await visibleWebview.controller.createTask(prompt)
+						await (sidebarWebview ?? targetWebview).controller.createTask(prompt)
 						return true
 					}
 					Logger.warn("SharedUriHandler: Missing prompt parameter for task creation")

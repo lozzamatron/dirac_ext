@@ -146,7 +146,7 @@ export async function createTestServer(controller: Controller): Promise<http.Ser
 				}
 
 				// Get a visible webview instance
-				const visibleWebview = DiracWebviewProvider.getVisibleInstance()
+				const visibleWebview = DiracWebviewProvider.getVisibleInstance() ?? DiracWebviewProvider.getLastActiveInstance()
 				if (!visibleWebview || !visibleWebview.controller) {
 					res.writeHead(500)
 					res.end(JSON.stringify({ error: "No active Dirac instance found" }))

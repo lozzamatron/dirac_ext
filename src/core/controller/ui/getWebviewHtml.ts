@@ -9,6 +9,10 @@ import type { Controller } from "../index"
  * resolved through `resolveWebviewView()`.
  */
 export async function getWebviewHtml(_controller: Controller, _: EmptyRequest): Promise<String> {
-	const webview = DiracWebviewProvider.getInstance()
+	// With several instances the sidebar is "the" webview for the standalone host.
+	const webview = DiracWebviewProvider.getSidebarInstance()
+	if (!webview) {
+		throw new Error("No Dirac sidebar webview instance is available to render HTML for.")
+	}
 	return Promise.resolve(String.create({ value: webview.getHtmlContent() }))
 }

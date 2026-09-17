@@ -106,5 +106,12 @@ export async function getContextForCommand(
 export async function showWebview(preserveEditorFocus = true): Promise<DiracWebviewProvider> {
 	await vscode.commands.executeCommand(ExtensionRegistryInfo.commands.FocusChatInput, preserveEditorFocus)
 
-	return DiracWebviewProvider.getInstance()
+	// FocusChatInput reveals an instance and marks it active; that instance is what routes the
+	// editor-context commands (Add to Dirac / Explain / Fix / Improve) to the webview the user is
+	// actually looking at, now that there can be several.
+	const instance = DiracWebviewProvider.getLastActiveInstance()
+	if (!instance) {
+		throw new Error("No Dirac webview instance is available.")
+	}
+	return instance
 }

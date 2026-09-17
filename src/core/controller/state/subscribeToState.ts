@@ -7,8 +7,8 @@ import { Logger } from "@/shared/services/Logger"
 import { getRequestRegistry, StreamingResponseHandler } from "../grpc-handler"
 import { Controller } from "../index"
 
-// Keep track of active state subscriptions
-const activeStateSubscriptions = new Set<StreamingResponseHandler<State>>()
+// Keep track of active state subscriptions by controller ID
+const activeStateSubscriptions = new Map<string, StreamingResponseHandler<State>>()
 const subscriptionDeliveries = new WeakMap<StreamingResponseHandler<State>, Promise<void>>()
 
 export async function subscribeToState(
@@ -17,8 +17,11 @@ export async function subscribeToState(
 	responseStream: StreamingResponseHandler<State>,
 	requestId?: string,
 ): Promise<void> {
+	const controllerId = controller.id
 	const cleanup = () => {
-		activeStateSubscriptions.delete(responseStream)
+		if (activeStateSubscriptions.get(controllerId) === responseStream) {
+			activeStateSubscriptions.delete(controllerId)
+		}
 	}
 
 	if (requestId) {
@@ -29,19 +32,27 @@ export async function subscribeToState(
 		const initialDelivery = enqueueSubscriptionDelivery(responseStream, async () => {
 			await sendStateToSubscription(await controller.getStateToPostToWebview(), responseStream, 0)
 		})
-		activeStateSubscriptions.add(responseStream)
+		activeStateSubscriptions.set(controllerId, responseStream)
 		await initialDelivery
 	} catch (error) {
 		Logger.error("Error publishing initial state:", error)
-		activeStateSubscriptions.delete(responseStream)
+		if (activeStateSubscriptions.get(controllerId) === responseStream) {
+			activeStateSubscriptions.delete(controllerId)
+		}
 	}
 }
 
 export async function sendStateUpdate(
+	controllerId: string,
 	state: Partial<ExtensionState>,
 	sequenceNumber: number,
 	presentation?: PresentationBatch,
 ): Promise<void> {
+	const responseStream = activeStateSubscriptions.get(controllerId)
+	if (!responseStream) {
+		return
+	}
+
 	let stateJson: string
 	let presentationJson: string | undefined
 	try {
@@ -55,18 +66,16 @@ export async function sendStateUpdate(
 	const sizeBytes = Buffer.byteLength(stateJson, "utf8") + (presentationJson ? Buffer.byteLength(presentationJson, "utf8") : 0)
 	recordStateSizeTelemetry(sizeBytes)
 
-	const promises = Array.from(activeStateSubscriptions).map(async (responseStream) => {
-		try {
-			await enqueueSubscriptionDelivery(responseStream, () =>
-				responseStream({ stateJson, presentationJson }, false, sequenceNumber),
-			)
-		} catch (error) {
-			Logger.error(`[StatePublication] Delivery failed sequence=${sequenceNumber}.`, error)
-			activeStateSubscriptions.delete(responseStream)
+	try {
+		await enqueueSubscriptionDelivery(responseStream, () =>
+			responseStream({ stateJson, presentationJson }, false, sequenceNumber),
+		)
+	} catch (error) {
+		Logger.error(`[StatePublication] Delivery failed sequence=${sequenceNumber}.`, error)
+		if (activeStateSubscriptions.get(controllerId) === responseStream) {
+			activeStateSubscriptions.delete(controllerId)
 		}
-	})
-
-	await Promise.all(promises)
+	}
 }
 
 function enqueueSubscriptionDelivery(

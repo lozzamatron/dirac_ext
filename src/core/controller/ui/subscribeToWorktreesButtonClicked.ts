@@ -4,7 +4,7 @@ import { getRequestRegistry, StreamingResponseHandler } from "../grpc-handler"
 import { Controller } from "../index"
 
 // Keep track of active worktrees button clicked subscriptions
-const activeWorktreesButtonClickedSubscriptions = new Set<StreamingResponseHandler<Empty>>()
+const activeWorktreesButtonClickedSubscriptions = new Map<string, StreamingResponseHandler<Empty>>()
 
 /**
  * Subscribe to worktrees button clicked events
@@ -14,17 +14,19 @@ const activeWorktreesButtonClickedSubscriptions = new Set<StreamingResponseHandl
  * @param requestId The ID of the request (passed by the gRPC handler)
  */
 export async function subscribeToWorktreesButtonClicked(
-	_controller: Controller,
+	controller: Controller,
 	_request: EmptyRequest,
 	responseStream: StreamingResponseHandler<Empty>,
 	requestId?: string,
 ): Promise<void> {
 	// Add this subscription to the active subscriptions
-	activeWorktreesButtonClickedSubscriptions.add(responseStream)
+	activeWorktreesButtonClickedSubscriptions.set(controller.id, responseStream)
 
 	// Register cleanup when the connection is closed
 	const cleanup = () => {
-		activeWorktreesButtonClickedSubscriptions.delete(responseStream)
+		if (activeWorktreesButtonClickedSubscriptions.get(controller.id) === responseStream) {
+			activeWorktreesButtonClickedSubscriptions.delete(controller.id)
+		}
 	}
 
 	// Register the cleanup function with the request registry if we have a requestId
@@ -39,23 +41,26 @@ export async function subscribeToWorktreesButtonClicked(
 }
 
 /**
- * Send a worktrees button clicked event to all active subscribers
+ * Send a worktrees button clicked event to a specific controller's webview
+ * @param controllerId The id of the controller whose webview should receive the event
  */
-export async function sendWorktreesButtonClickedEvent(): Promise<void> {
-	// Send the event to all active subscribers
-	const promises = Array.from(activeWorktreesButtonClickedSubscriptions).map(async (responseStream) => {
-		try {
-			const event = Empty.create({})
-			await responseStream(
-				event,
-				false, // Not the last message
-			)
-		} catch (error) {
-			Logger.error("Error sending worktrees button clicked event:", error)
-			// Remove the subscription if there was an error
-			activeWorktreesButtonClickedSubscriptions.delete(responseStream)
-		}
-	})
+export async function sendWorktreesButtonClickedEvent(controllerId: string): Promise<void> {
+	// Get the subscription for this specific controller
+	const responseStream = activeWorktreesButtonClickedSubscriptions.get(controllerId)
 
-	await Promise.all(promises)
+	if (!responseStream) {
+		return
+	}
+
+	try {
+		const event = Empty.create({})
+		await responseStream(
+			event,
+			false, // Not the last message
+		)
+	} catch (error) {
+		Logger.error("Error sending worktrees button clicked event:", error)
+		// Remove the subscription if there was an error
+		activeWorktreesButtonClickedSubscriptions.delete(controllerId)
+	}
 }
