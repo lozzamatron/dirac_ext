@@ -7,41 +7,79 @@ import { DiracExtensionContext } from "@/shared/dirac"
 import { ShowMessageType } from "@/shared/proto/host/window"
 import { Logger } from "@/shared/services/Logger"
 import { getNonce } from "./getNonce"
+import { webviewInstances, type WebviewSurface } from "./InstanceRegistry"
 
 export abstract class DiracWebviewProvider {
 	controller: Controller
 
-	private static instance: DiracWebviewProvider | null = null
-
-	constructor(readonly context: DiracExtensionContext) {
-		DiracWebviewProvider.instance = this
-
+	constructor(readonly context: DiracExtensionContext, readonly surface: WebviewSurface = "sidebar") {
 		// Create controller with cache service
 		this.controller = new Controller(context)
+
+		// Registered last: the registry reads `controller.id`, so the controller must exist first.
+		webviewInstances.register(this)
 	}
 
 	async dispose() {
 		await this.controller.dispose()
-		DiracWebviewProvider.instance = null
+		webviewInstances.unregister(this)
 	}
 
+	/** Hosts call this when their webview becomes visible or active. */
+	public markActive(): void {
+		webviewInstances.markActive(this)
+	}
+
+	public get controllerId(): string {
+		return this.controller.id
+	}
+
+	/**
+	 * @deprecated use getLastActiveInstance(); kept so untouched upstream call sites keep compiling
+	 */
 	public static getInstance(): DiracWebviewProvider {
-		if (!DiracWebviewProvider.instance) {
+		const instance = DiracWebviewProvider.getLastActiveInstance()
+		if (!instance) {
 			throw new Error(
 				"DiracWebviewProvider instance not initialized. Make sure to create a DiracWebviewProvider instance first.",
 			)
 		}
-		return DiracWebviewProvider.instance
+		return instance
 	}
 
+	/** Resolves the last active webview instance, if any. */
+	public static getLastActiveInstance(): DiracWebviewProvider | undefined {
+		return webviewInstances.lastActiveInstance()
+	}
+
+	/** Resolves the last registered instance that reports itself as visible. */
 	public static getVisibleInstance(): DiracWebviewProvider | undefined {
-		return DiracWebviewProvider.instance?.isVisible() ? DiracWebviewProvider.instance : undefined
+		return webviewInstances.visible()
 	}
 
-	public static async disposeAllInstances() {
-		if (DiracWebviewProvider.instance) {
-			await DiracWebviewProvider.instance.dispose()
-		}
+	/** Resolves all registered webview instances, in insertion order. */
+	public static getAllInstances(): DiracWebviewProvider[] {
+		return webviewInstances.all()
+	}
+
+	/** Resolves the first registered sidebar instance, if any. */
+	public static getSidebarInstance(): DiracWebviewProvider | undefined {
+		return webviewInstances.sidebar()
+	}
+
+	/** Resolves all registered tab instances, in insertion order. */
+	public static getTabInstances(): DiracWebviewProvider[] {
+		return webviewInstances.tabs()
+	}
+
+	/** Resolves the instance whose controller has the given id. */
+	public static getInstanceByControllerId(id: string): DiracWebviewProvider | undefined {
+		return webviewInstances.byControllerId(id)
+	}
+
+	/** Disposes every registered webview instance. */
+	public static async disposeAllInstances(): Promise<void> {
+		await webviewInstances.disposeAll()
 	}
 
 	/**

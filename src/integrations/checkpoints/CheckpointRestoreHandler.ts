@@ -1,4 +1,5 @@
 import { sendRelinquishControlEvent } from "@core/controller/ui/subscribeToRelinquishControl"
+import { webviewInstances } from "@core/webview/InstanceRegistry"
 import { getPresentationHistoryAtMessage } from "@core/storage/disk"
 import { findLastIndex } from "@shared/array"
 import { combineCardSequences } from "@shared/combineCardSequences"
@@ -208,7 +209,12 @@ export class CheckpointRestoreHandler {
 					checkpointManagerStateUpdate.conversationHistoryDeletedRange = this.conversationHistoryDeletedRange
 				}
 			} else {
-				sendRelinquishControlEvent()
+				{
+					const controllerId = webviewInstances.controllerIdForTask(this.config.taskId)
+					if (controllerId) {
+						sendRelinquishControlEvent(controllerId)
+					}
+				}
 				if (this.storage.getErrorMessage() !== undefined) {
 					checkpointManagerStateUpdate.checkpointManagerErrorMessage = this.storage.getErrorMessage()
 				}
@@ -218,7 +224,10 @@ export class CheckpointRestoreHandler {
 		} catch (error) {
 			const errorMessage = getErrorMessage(error, "Unknown error")
 			Logger.error(`[CheckpointRestoreHandler] Failed to restore checkpoint for task ${this.config.taskId}:`, errorMessage)
-			sendRelinquishControlEvent()
+			const controllerId = webviewInstances.controllerIdForTask(this.config.taskId)
+			if (controllerId) {
+				sendRelinquishControlEvent(controllerId)
+			}
 			return { checkpointManagerErrorMessage: errorMessage }
 		}
 	}

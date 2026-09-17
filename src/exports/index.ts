@@ -11,7 +11,7 @@ export function createDiracAPI(sidebarController: Controller): DiracAPI {
 			await sidebarController.clearTask()
 			await sidebarController.postStateToWebview()
 
-			await sendChatButtonClickedEvent()
+			await sendChatButtonClickedEvent(sidebarController.id)
 			await sidebarController.initTask(task, images)
 		},
 

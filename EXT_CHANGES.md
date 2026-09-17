@@ -43,6 +43,42 @@ bounded job. **Rule:** new behaviour goes in new files; touches to upstream file
 
 ---
 
+## WP1 — instance registry + per-controller event routing (merged 2026-09-16)
+
+**What it does:** removes the `DiracWebviewProvider` singleton and routes the nine per-webview event
+streams by controller id, so a second webview (WP2's editor tabs) can exist without the two of them
+overwriting each other's state. No tab is created yet — the sidebar is still the only instance.
+
+### New files
+| File | Purpose |
+|---|---|
+| `src/core/webview/InstanceRegistry.ts` | Process-local registry of live providers: `register/unregister/markActive`, `all/sidebar/tabs/visible/lastActiveInstance/byControllerId/count/disposeAll`, plus `controllerIdForTask(taskId)` for events fired deep in task code where no controller is in scope. |
+
+### Touched upstream files
+| File | Change |
+|---|---|
+| `src/core/webview/WebviewProvider.ts` | Singleton → registry. Constructor takes an optional `surface` (`"sidebar"` default) and registers **after** the controller exists. New statics `getSidebarInstance/getTabInstances/getVisibleInstance/getLastActiveInstance/getAllInstances/getInstanceByControllerId/disposeAllInstances`; `getInstance()` kept as a `@deprecated` alias for the last-active instance. |
+| `src/core/controller/index.ts` | `readonly id = ulid()`; `sendStateUpdate(this.id, …)`; `sendChatButtonClickedEvent(this.id)`; `cleanupLegacyCheckpoints()` fires once per process, not once per controller. |
+| 9 × `subscribeTo*.ts` (`state`, `showWebview`, `chatButtonClicked`, `settingsButtonClicked`, `historyButtonClicked`, `worktreesButtonClicked`, `addToInput`, `relinquishControl`, `accountButtonClicked`) | `Set<handler>` → `Map<controllerId, handler>`; each `send…Event` takes `controllerId` first and no-ops when that controller has no live subscription; every cleanup closure only deletes its own handler. `openRouterModels`, `liteLlmModels` and `checkpoints` stay broadcasts. |
+| `src/extension.ts` | New Task → sidebar; settings/history/worktrees + accept/save/reject edit → `getLastActiveInstance() ?? getSidebarInstance()`; terminal add-to-chat → the instance `showWebview()` revealed; FocusChatInput resolves visible-then-sidebar, still calls `webviewView.show()` (see review finding 1), marks it active and targets its controller id. |
+| `src/hosts/vscode/VscodeWebviewProvider.ts` | Visibility handler calls `markActive()` and `sendShowWebviewEvent(this.controller.id, true)`; `getInjectedConfig()` adds `instanceId` and `surface`. |
+| `webview-ui/src/config/platform.config.ts` | `DiracRuntimeConfig` gains `instanceId`/`surface`; new `getInstanceId()` / `getSurface()` accessors, `DiracSurface` type. |
+| `src/hosts/vscode/commandUtils.ts` | `showWebview()` returns the last-active instance (throws with a clear message when there is none) instead of the singleton. |
+| `src/services/uri/SharedUriHandler.ts` | Visibility gate → existence gate; auth callbacks → last-active, `/task` → sidebar. |
+| `src/core/controller/ui/getWebviewHtml.ts` | Standalone host renders the **sidebar** instance; throws a clear error when there is none. |
+| `src/services/test/TestServer.ts` | `getVisibleInstance() ?? getLastActiveInstance()`. |
+| `src/hosts/vscode/review/VscodeCommentReplyHandler.ts` | No controller in scope → sends the review conversation to the last-active instance, warns instead of throwing when there is none. |
+| `src/integrations/checkpoints/{CheckpointDiffPresenter,CheckpointRestoreHandler}.ts` | `sendRelinquishControlEvent(controllerIdForTask(this.config.taskId))`, skipped when nothing resolves. |
+| `src/core/controller/{commands/addToDirac,state/resetState,task/showTaskWithId}.ts`, `src/exports/index.ts` | Pass the in-scope controller's id to the routed senders. |
+
+### Findings worth keeping
+- **`BannerService.initialize()` is already idempotent** upstream (`if (BannerService.instance) return`), so the audit's "add a guard" item needed no change. Only `cleanupLegacyCheckpoints()` was guarded.
+- **`sendAddToInputEvent` has no consumer in the webview** — nothing in `webview-ui/src` subscribes to `subscribeToAddToInput` in upstream 0.5.13 either, so "Add to Dirac" has never actually filled the chat input on this version. The routing change is faithful (the event now goes to one controller instead of an empty broadcast), but the feature is dead upstream. WP1's acceptance therefore asserts the handler ran with the right selection (Dirac's own log line), not that text appeared. Worth a separate fix or an upstream issue.
+- **`controllerIdForTask()` falls back to the last-active instance** when no instance's `controller.task` matches (e.g. Goal child tasks). With one instance that is always right; with tabs it could re-enable the wrong webview's UI, so the fallback logs a warning when more than one instance exists. Revisit in WP2, when task↔instance ownership becomes explicit.
+- Reviewer (`glm-5.3-flash` on :8001, different model from the author) returned SHIP WITH FIXES; its report is in `verification/wp1/reviewer-report-glm53flash.md`. Fixed before merge: the FocusChatInput `show()` regression, `disposeAll()` aborting on a rejected `dispose()`, and the silent `controllerIdForTask` fallback. Accepted as-is: throw→warn behaviour changes in the no-instance window, and state-size telemetry no longer recorded when nothing is subscribed.
+
+---
+
 ## Build-host facts (not fork changes — they bite every WP)
 
 - **`npm run package` needs `unzip`, which this container does not have.** `scripts/prepare-extension-ripgrep-binaries.mjs`

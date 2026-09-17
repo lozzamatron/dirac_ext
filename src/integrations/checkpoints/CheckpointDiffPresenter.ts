@@ -1,4 +1,5 @@
 import { sendRelinquishControlEvent } from "@core/controller/ui/subscribeToRelinquishControl"
+import { webviewInstances } from "@core/webview/InstanceRegistry"
 import { findLast } from "@shared/array"
 import { isTaskCompletionCard } from "@shared/cardIdentity"
 import { HostProvider } from "@/hosts/host-provider"
@@ -47,7 +48,10 @@ export class CheckpointDiffPresenter {
 	 */
 	async presentMultifileDiff(messageId: string, seeNewChangesSinceLastTaskCompletion: boolean): Promise<void> {
 		const relinquishButton = () => {
-			sendRelinquishControlEvent()
+			const controllerId = webviewInstances.controllerIdForTask(this.config.taskId)
+			if (controllerId) {
+				sendRelinquishControlEvent(controllerId)
+			}
 		}
 
 		try {

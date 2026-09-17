@@ -13,6 +13,7 @@ import type { PresentationBatch } from "@shared/PresentationOperation"
 import type { Mode } from "@shared/storage/types"
 import type { TelemetrySetting } from "@shared/TelemetrySetting"
 import { fingerprintAvailableTools } from "@shared/utils/tool-fingerprint"
+import { ulid } from "ulid"
 import { openAiCodexUsageService } from "@/integrations/openai-codex/OpenAiCodexUsageService"
 import { BannerService } from "@/services/banner/BannerService"
 import { DiracExtensionContext } from "@/shared/dirac"
@@ -33,6 +34,10 @@ import { sendChatButtonClickedEvent } from "./ui/subscribeToChatButtonClicked"
 import { getStateToPostToWebview as getUiState } from "./ui/UiController"
 import { WorkspaceController } from "./workspace/WorkspaceController"
 
+// Dirac EXT: several Controllers exist per process now (sidebar + one per editor tab), and this
+// migration is process-wide — fire it once, not once per webview.
+let legacyCheckpointCleanupStarted = false
+
 export type ControllerOptions = {
 	workspaceCwd?: string
 	goalRoutingEnabled?: boolean
@@ -52,6 +57,8 @@ interface SelectedPresentation extends PresentationSnapshot {
 }
 
 export class Controller {
+	/** Identifies this controller — and therefore its webview instance — in the per-controller event streams. */
+	readonly id: string = ulid()
 	public discoveredSkillsCache?: SkillMetadata[]
 	readonly stateManager: StateManager
 	private availableToolsFingerprint?: string
@@ -94,7 +101,7 @@ export class Controller {
 	private readonly statePublicationQueue = new StatePublicationQueue<OutboundStatePublication, StatePublicationRequest>(
 		(request) => this.getStatePublication(request),
 		async (publication, sequenceNumber) => {
-			await sendStateUpdate(publication.state, sequenceNumber, publication.presentation)
+			await sendStateUpdate(this.id, publication.state, sequenceNumber, publication.presentation)
 			publication.acknowledge()
 		},
 		(pending, requested) => (pending === "control" || requested === "control" ? "control" : "presentation"),
@@ -144,10 +151,13 @@ export class Controller {
 
 		BannerService.initialize(this)
 
-		// Clean up legacy checkpoints
-		cleanupLegacyCheckpoints().catch((error) => {
-			Logger.error("Failed to cleanup legacy checkpoints:", error)
-		})
+		// Clean up legacy checkpoints (once per process — see legacyCheckpointCleanupStarted)
+		if (!legacyCheckpointCleanupStarted) {
+			legacyCheckpointCleanupStarted = true
+			cleanupLegacyCheckpoints().catch((error) => {
+				Logger.error("Failed to cleanup legacy checkpoints:", error)
+			})
+		}
 
 		// Check CLI installation status once on startup
 		checkCliInstallation(this)
@@ -265,7 +275,7 @@ export class Controller {
 	}
 
 	async createTask(prompt: string) {
-		await sendChatButtonClickedEvent()
+		await sendChatButtonClickedEvent(this.id)
 		await this.initTask(prompt)
 	}
 

@@ -124,15 +124,49 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand(commands.PlusButton, async () => {
-			const sidebarInstance = DiracWebviewProvider.getInstance()
+			const sidebarInstance = DiracWebviewProvider.getSidebarInstance()
+			if (!sidebarInstance) {
+				Logger.warn("New Task command: no sidebar instance available")
+				return
+			}
 			await sidebarInstance.controller.clearTask()
 			await sidebarInstance.controller.postStateToWebview()
-			await sendChatButtonClickedEvent()
+			await sendChatButtonClickedEvent(sidebarInstance.controller.id)
 		}),
 	)
-	context.subscriptions.push(vscode.commands.registerCommand(commands.SettingsButton, () => sendSettingsButtonClickedEvent()))
-	context.subscriptions.push(vscode.commands.registerCommand(commands.HistoryButton, () => sendHistoryButtonClickedEvent()))
-	context.subscriptions.push(vscode.commands.registerCommand(commands.WorktreesButton, () => sendWorktreesButtonClickedEvent()))
+
+	const resolveTargetInstance = () => DiracWebviewProvider.getLastActiveInstance() ?? DiracWebviewProvider.getSidebarInstance()
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand(commands.SettingsButton, () => {
+			const instance = resolveTargetInstance()
+			if (!instance) {
+				Logger.warn("Settings button: no webview instance available")
+				return
+			}
+			sendSettingsButtonClickedEvent(instance.controller.id)
+		}),
+	)
+	context.subscriptions.push(
+		vscode.commands.registerCommand(commands.HistoryButton, () => {
+			const instance = resolveTargetInstance()
+			if (!instance) {
+				Logger.warn("History button: no webview instance available")
+				return
+			}
+			sendHistoryButtonClickedEvent(instance.controller.id)
+		}),
+	)
+	context.subscriptions.push(
+		vscode.commands.registerCommand(commands.WorktreesButton, () => {
+			const instance = resolveTargetInstance()
+			if (!instance) {
+				Logger.warn("Worktrees button: no webview instance available")
+				return
+			}
+			sendWorktreesButtonClickedEvent(instance.controller.id)
+		}),
+	)
 
 	/*
 	We use the text document content provider API to show the left side for diff view by creating a
@@ -156,26 +190,38 @@ export async function activate(context: vscode.ExtensionContext) {
 	// Register commands for Accept/Reject from CodeLens
 	context.subscriptions.push(
 		vscode.commands.registerCommand("dirac-ext.acceptEdit", async () => {
-			const sidebarInstance = DiracWebviewProvider.getInstance()
-			if (sidebarInstance.controller?.task) {
-				await sidebarInstance.controller.task.submitCardResponse("", DiracAskResponse.APPROVE)
+			const instance = resolveTargetInstance()
+			if (!instance) {
+				Logger.warn("Accept edit: no webview instance available")
+				return
+			}
+			if (instance.controller?.task) {
+				await instance.controller.task.submitCardResponse("", DiracAskResponse.APPROVE)
 			}
 		}),
 	)
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand("dirac-ext.saveWithMyChanges", async () => {
-			const sidebarInstance = DiracWebviewProvider.getInstance()
-			if (sidebarInstance.controller?.task) {
-				await sidebarInstance.controller.task.submitCardResponse("", DiracAskResponse.APPROVE)
+			const instance = resolveTargetInstance()
+			if (!instance) {
+				Logger.warn("Save with my changes: no webview instance available")
+				return
+			}
+			if (instance.controller?.task) {
+				await instance.controller.task.submitCardResponse("", DiracAskResponse.APPROVE)
 			}
 		}),
 	)
 	context.subscriptions.push(
 		vscode.commands.registerCommand("dirac-ext.rejectEdit", async () => {
-			const sidebarInstance = DiracWebviewProvider.getInstance()
-			if (sidebarInstance.controller?.task) {
-				await sidebarInstance.controller.task.submitCardResponse("", DiracAskResponse.REJECT)
+			const instance = resolveTargetInstance()
+			if (!instance) {
+				Logger.warn("Reject edit: no webview instance available")
+				return
+			}
+			if (instance.controller?.task) {
+				await instance.controller.task.submitCardResponse("", DiracAskResponse.REJECT)
 			}
 		}),
 	)
@@ -242,9 +288,9 @@ export async function activate(context: vscode.ExtensionContext) {
 					return
 				}
 				// Ensure the sidebar view is visible but preserve editor focus
-				await showWebview(true)
+				const instance = await showWebview(true)
 
-				await sendAddToInputEvent(`Terminal output:\n\`\`\`\n${terminalContents}\n\`\`\``)
+				await sendAddToInputEvent(instance.controller.id, `Terminal output:\n\`\`\`\n${terminalContents}\n\`\`\``)
 
 				Logger.log("addSelectedTerminalOutputToChat", terminalContents, terminal.name)
 			} catch (error) {
@@ -397,10 +443,17 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand(commands.FocusChatInput, async (preserveEditorFocus = false) => {
-			const webview = DiracWebviewProvider.getInstance() as VscodeDiracWebviewProvider
+			// Prefer the instance the user is looking at; fall back to the sidebar.
+			const instance = DiracWebviewProvider.getVisibleInstance() ?? DiracWebviewProvider.getSidebarInstance()
 
-			// Show the webview
-			const webviewView = webview.getWebview()
+			if (!instance) {
+				Logger.warn("Focus chat input: no webview instance available")
+				return
+			}
+
+			// Show the webview. This must run even when the instance is already visible: only
+			// `show(true)` moves OS focus into the view, and the in-page event below cannot.
+			const webviewView = (instance as VscodeDiracWebviewProvider).getWebview?.()
 			if (webviewView) {
 				if (preserveEditorFocus) {
 					// Only make webview visible without forcing focus
@@ -411,9 +464,10 @@ export async function activate(context: vscode.ExtensionContext) {
 				}
 			}
 
+			instance.markActive()
 			// Send show webview event with preserveEditorFocus flag
-			sendShowWebviewEvent(preserveEditorFocus)
-			telemetryService.captureButtonClick("command_focusChatInput", webview.controller?.task?.ulid)
+			await sendShowWebviewEvent(instance.controller.id, preserveEditorFocus)
+			telemetryService.captureButtonClick("command_focusChatInput", instance.controller?.task?.ulid)
 		}),
 	)
 
