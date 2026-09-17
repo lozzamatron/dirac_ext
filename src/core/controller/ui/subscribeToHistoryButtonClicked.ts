@@ -4,7 +4,7 @@ import { getRequestRegistry, StreamingResponseHandler } from "../grpc-handler"
 import { Controller } from "../index"
 
 // Keep track of active history button clicked subscriptions
-const activeHistoryButtonClickedSubscriptions = new Map<string, StreamingResponseHandler<Empty>>()
+const activeHistoryButtonClickedSubscriptions = new Map<string, Set<StreamingResponseHandler<Empty>>>()
 
 /**
  * Subscribe to history button clicked events
@@ -20,12 +20,21 @@ export async function subscribeToHistoryButtonClicked(
 	requestId?: string,
 ): Promise<void> {
 	// Add this subscription to the active subscriptions
-	activeHistoryButtonClickedSubscriptions.set(controller.id, responseStream)
+	let subscriptions = activeHistoryButtonClickedSubscriptions.get(controller.id)
+	if (!subscriptions) {
+		subscriptions = new Set<StreamingResponseHandler<Empty>>()
+		activeHistoryButtonClickedSubscriptions.set(controller.id, subscriptions)
+	}
+	subscriptions.add(responseStream)
 
 	// Register cleanup when the connection is closed
 	const cleanup = () => {
-		if (activeHistoryButtonClickedSubscriptions.get(controller.id) === responseStream) {
-			activeHistoryButtonClickedSubscriptions.delete(controller.id)
+		const currentSubscriptions = activeHistoryButtonClickedSubscriptions.get(controller.id)
+		if (currentSubscriptions) {
+			currentSubscriptions.delete(responseStream)
+			if (currentSubscriptions.size === 0) {
+				activeHistoryButtonClickedSubscriptions.delete(controller.id)
+			}
 		}
 	}
 
@@ -36,26 +45,37 @@ export async function subscribeToHistoryButtonClicked(
 }
 
 /**
- * Send a history button clicked event to a specific controller's webview
+ * Send a history button clicked event to all subscribers of a specific controller's webview
  * @param controllerId The id of the controller whose webview should receive the event
  */
 export async function sendHistoryButtonClickedEvent(controllerId: string): Promise<void> {
-	// Get the subscription for this specific controller
-	const responseStream = activeHistoryButtonClickedSubscriptions.get(controllerId)
+	// Get the subscriptions for this specific controller
+	const responseStreams = activeHistoryButtonClickedSubscriptions.get(controllerId)
 
-	if (!responseStream) {
+	if (!responseStreams || responseStreams.size === 0) {
 		return
 	}
 
-	try {
-		const event = Empty.create({})
-		await responseStream(
-			event,
-			false, // Not the last message
-		)
-	} catch (error) {
-		Logger.error("Error sending history button clicked event:", error)
-		// Remove the subscription if there was an error
-		activeHistoryButtonClickedSubscriptions.delete(controllerId)
-	}
+	const event = Empty.create({})
+
+	await Promise.all(
+		Array.from(responseStreams).map(async (responseStream) => {
+			try {
+				await responseStream(
+					event,
+					false, // Not the last message
+				)
+			} catch (error) {
+				Logger.error("Error sending history button clicked event:", error)
+				// Remove the subscription if there was an error
+				const currentSubscriptions = activeHistoryButtonClickedSubscriptions.get(controllerId)
+				if (currentSubscriptions) {
+					currentSubscriptions.delete(responseStream)
+					if (currentSubscriptions.size === 0) {
+						activeHistoryButtonClickedSubscriptions.delete(controllerId)
+					}
+				}
+			}
+		}),
+	)
 }
