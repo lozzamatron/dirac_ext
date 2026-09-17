@@ -21,12 +21,12 @@ export class VscodeCommentReviewController extends CommentReviewController imple
 	private registerCommands(): void {
 		// Register commands and track disposals so they're cleaned up with the controller
 		this.disposables.push(
-			vscode.commands.registerCommand("dirac.reviewComment.reply", async (reply: vscode.CommentReply) => {
+			vscode.commands.registerCommand("dirac-ext.reviewComment.reply", async (reply: vscode.CommentReply) => {
 				await this.replyHandler.handleReply(reply)
 			}),
 		)
 		this.disposables.push(
-			vscode.commands.registerCommand("dirac.reviewComment.addToChat", async (thread: vscode.CommentThread) => {
+			vscode.commands.registerCommand("dirac-ext.reviewComment.addToChat", async (thread: vscode.CommentThread) => {
 				await this.replyHandler.handleAddToChat(thread)
 			}),
 		)

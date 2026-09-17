@@ -52,12 +52,24 @@ function isNotADirectory(error: any): boolean {
 	return error.code === "ENOTDIR"
 }
 
+/**
+ * Dirac EXT: a path we are not allowed to look at is treated as absent.
+ *
+ * Upstream only catches ENOENT/ENOTDIR here, so a workspace walk that crosses a directory owned by
+ * another user (EACCES/EPERM) throws out of `fileExistsAtPath`/`isDirectory`/`getFileSizeInKB` and
+ * kills the task before any API call. This is the source-level form of the patch that upstream
+ * builds need applied to their minified bundle on this host. See dirac-ext/EXT_CHANGES.md (WP0).
+ */
+function isNotAccessible(error: any): boolean {
+	return error.code === "EACCES" || error.code === "EPERM"
+}
+
 export async function fileExistsAtPath(filePath: string): Promise<boolean> {
 	try {
 		await fs.access(filePath)
 		return true
 	} catch (error: any) {
-		if (isNotFound(error) || isNotADirectory(error)) {
+		if (isNotFound(error) || isNotADirectory(error) || isNotAccessible(error)) {
 			return false
 		}
 		throw error
@@ -74,7 +86,7 @@ export async function isDirectory(filePath: string): Promise<boolean> {
 		const stats = await fs.stat(filePath)
 		return stats.isDirectory()
 	} catch (error: any) {
-		if (isNotFound(error) || isNotADirectory(error)) {
+		if (isNotFound(error) || isNotADirectory(error) || isNotAccessible(error)) {
 			return false
 		}
 		throw error
@@ -92,7 +104,7 @@ export async function getFileSizeInKB(filePath: string): Promise<number> {
 		const fileSizeInKB = stats.size / 1000 // Convert bytes to KB (decimal) - matches OS file size display
 		return fileSizeInKB
 	} catch (error: any) {
-		if (isNotFound(error) || isNotADirectory(error)) {
+		if (isNotFound(error) || isNotADirectory(error) || isNotAccessible(error)) {
 			return 0
 		}
 		throw error

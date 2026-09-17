@@ -13,7 +13,7 @@ import { ShowMessageType } from "@/shared/proto/host/window"
  */
 export function registerTaskCommands(controller: Controller): vscode.Disposable[] {
 	return [
-		vscode.commands.registerCommand("dirac.dev.createTestTasks", async () => {
+		vscode.commands.registerCommand("dirac-ext.dev.createTestTasks", async () => {
 			const count = (
 				await HostProvider.window.showInputBox({
 					title: "Test Tasks",
