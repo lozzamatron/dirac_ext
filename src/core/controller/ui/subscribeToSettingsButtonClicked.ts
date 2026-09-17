@@ -4,7 +4,7 @@ import { getRequestRegistry, StreamingResponseHandler } from "../grpc-handler"
 import type { Controller } from "../index"
 
 // Keep track of active settings button clicked subscriptions
-const activeSettingsButtonClickedSubscriptions = new Map<string, StreamingResponseHandler<Empty>>()
+const activeSettingsButtonClickedSubscriptions = new Map<string, Set<StreamingResponseHandler<Empty>>>()
 
 /**
  * Subscribe to settings button clicked events
@@ -20,12 +20,21 @@ export async function subscribeToSettingsButtonClicked(
 	requestId?: string,
 ): Promise<void> {
 	// Add this subscription to the active subscriptions
-	activeSettingsButtonClickedSubscriptions.set(controller.id, responseStream)
+	let subscriptions = activeSettingsButtonClickedSubscriptions.get(controller.id)
+	if (!subscriptions) {
+		subscriptions = new Set<StreamingResponseHandler<Empty>>()
+		activeSettingsButtonClickedSubscriptions.set(controller.id, subscriptions)
+	}
+	subscriptions.add(responseStream)
 
 	// Register cleanup when the connection is closed
 	const cleanup = () => {
-		if (activeSettingsButtonClickedSubscriptions.get(controller.id) === responseStream) {
-			activeSettingsButtonClickedSubscriptions.delete(controller.id)
+		const currentSubscriptions = activeSettingsButtonClickedSubscriptions.get(controller.id)
+		if (currentSubscriptions) {
+			currentSubscriptions.delete(responseStream)
+			if (currentSubscriptions.size === 0) {
+				activeSettingsButtonClickedSubscriptions.delete(controller.id)
+			}
 		}
 	}
 
@@ -36,22 +45,34 @@ export async function subscribeToSettingsButtonClicked(
 }
 
 /**
- * Send a settings button clicked event to a specific controller's webview
+ * Send a settings button clicked event to all subscribers of a specific controller's webview
  * @param controllerId The id of the controller whose webview should receive the event
  */
 export async function sendSettingsButtonClickedEvent(controllerId: string): Promise<void> {
-	// Get the subscription for this specific controller
-	const responseStream = activeSettingsButtonClickedSubscriptions.get(controllerId)
+	// Get the subscriptions for this specific controller
+	const responseStreams = activeSettingsButtonClickedSubscriptions.get(controllerId)
 
-	if (!responseStream) {
+	if (!responseStreams || responseStreams.size === 0) {
 		return
 	}
 
-	try {
-		const event = Empty.create({})
-		await responseStream(event, false) // Not the last message
-	} catch (error) {
-		Logger.error("Error sending settings button clicked event:", error)
-		activeSettingsButtonClickedSubscriptions.delete(controllerId)
-	}
+	const event = Empty.create({})
+
+	await Promise.all(
+		Array.from(responseStreams).map(async (responseStream) => {
+			try {
+				await responseStream(event, false) // Not the last message
+			} catch (error) {
+				Logger.error("Error sending settings button clicked event:", error)
+				// Remove the subscription if there was an error
+				const currentSubscriptions = activeSettingsButtonClickedSubscriptions.get(controllerId)
+				if (currentSubscriptions) {
+					currentSubscriptions.delete(responseStream)
+					if (currentSubscriptions.size === 0) {
+						activeSettingsButtonClickedSubscriptions.delete(controllerId)
+					}
+				}
+			}
+		}),
+	)
 }

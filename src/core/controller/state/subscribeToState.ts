@@ -7,8 +7,10 @@ import { Logger } from "@/shared/services/Logger"
 import { getRequestRegistry, StreamingResponseHandler } from "../grpc-handler"
 import { Controller } from "../index"
 
-// Keep track of active state subscriptions by controller ID
-const activeStateSubscriptions = new Map<string, StreamingResponseHandler<State>>()
+// Active state subscriptions, routed per controller. The value is a Set because one webview can
+// legitimately subscribe more than once (two React components each call useChatState()), and a
+// single-handler map silently dropped the earlier subscriber.
+const activeStateSubscriptions = new Map<string, Set<StreamingResponseHandler<State>>>()
 const subscriptionDeliveries = new WeakMap<StreamingResponseHandler<State>, Promise<void>>()
 
 export async function subscribeToState(
@@ -18,10 +20,18 @@ export async function subscribeToState(
 	requestId?: string,
 ): Promise<void> {
 	const controllerId = controller.id
-	const cleanup = () => {
-		if (activeStateSubscriptions.get(controllerId) === responseStream) {
+	const removeSubscription = () => {
+		const subscriptions = activeStateSubscriptions.get(controllerId)
+		if (!subscriptions) {
+			return
+		}
+		subscriptions.delete(responseStream)
+		if (subscriptions.size === 0) {
 			activeStateSubscriptions.delete(controllerId)
 		}
+	}
+	const cleanup = () => {
+		removeSubscription()
 	}
 
 	if (requestId) {
@@ -32,13 +42,16 @@ export async function subscribeToState(
 		const initialDelivery = enqueueSubscriptionDelivery(responseStream, async () => {
 			await sendStateToSubscription(await controller.getStateToPostToWebview(), responseStream, 0)
 		})
-		activeStateSubscriptions.set(controllerId, responseStream)
+		let subscriptions = activeStateSubscriptions.get(controllerId)
+		if (!subscriptions) {
+			subscriptions = new Set<StreamingResponseHandler<State>>()
+			activeStateSubscriptions.set(controllerId, subscriptions)
+		}
+		subscriptions.add(responseStream)
 		await initialDelivery
 	} catch (error) {
 		Logger.error("Error publishing initial state:", error)
-		if (activeStateSubscriptions.get(controllerId) === responseStream) {
-			activeStateSubscriptions.delete(controllerId)
-		}
+		removeSubscription()
 	}
 }
 
@@ -48,8 +61,8 @@ export async function sendStateUpdate(
 	sequenceNumber: number,
 	presentation?: PresentationBatch,
 ): Promise<void> {
-	const responseStream = activeStateSubscriptions.get(controllerId)
-	if (!responseStream) {
+	const subscriptions = activeStateSubscriptions.get(controllerId)
+	if (!subscriptions || subscriptions.size === 0) {
 		return
 	}
 
@@ -66,16 +79,25 @@ export async function sendStateUpdate(
 	const sizeBytes = Buffer.byteLength(stateJson, "utf8") + (presentationJson ? Buffer.byteLength(presentationJson, "utf8") : 0)
 	recordStateSizeTelemetry(sizeBytes)
 
-	try {
-		await enqueueSubscriptionDelivery(responseStream, () =>
-			responseStream({ stateJson, presentationJson }, false, sequenceNumber),
-		)
-	} catch (error) {
-		Logger.error(`[StatePublication] Delivery failed sequence=${sequenceNumber}.`, error)
-		if (activeStateSubscriptions.get(controllerId) === responseStream) {
-			activeStateSubscriptions.delete(controllerId)
+	// Iterate a copy: a failing delivery removes its handler from the live set.
+	const promises = Array.from(subscriptions).map(async (responseStream) => {
+		try {
+			await enqueueSubscriptionDelivery(responseStream, () =>
+				responseStream({ stateJson, presentationJson }, false, sequenceNumber),
+			)
+		} catch (error) {
+			Logger.error(`[StatePublication] Delivery failed sequence=${sequenceNumber}.`, error)
+			const current = activeStateSubscriptions.get(controllerId)
+			if (current) {
+				current.delete(responseStream)
+				if (current.size === 0) {
+					activeStateSubscriptions.delete(controllerId)
+				}
+			}
 		}
-	}
+	})
+
+	await Promise.all(promises)
 }
 
 function enqueueSubscriptionDelivery(

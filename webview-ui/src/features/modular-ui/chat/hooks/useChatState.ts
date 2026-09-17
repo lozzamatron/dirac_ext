@@ -1,6 +1,8 @@
+import { EmptyRequest } from "@shared/proto/dirac/common"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { ChatState } from "../types/chatTypes"
 import { useChatStore } from "@/features/chat/store/chatStore"
+import { UiServiceClient } from "@/shared/api/grpc-client"
 import { useShallow } from "zustand/react/shallow"
 
 /**
@@ -59,6 +61,35 @@ export function useChatState(): ChatState {
 	useEffect(() => {
 		clearExpandedRows()
 	}, [task?.id, clearExpandedRows])
+
+	// Dirac EXT: receive "Add to Dirac" / "Add terminal output to chat" text from the host.
+	//
+	// The extension has always sent this over the addToInput stream, but upstream's webview never
+	// subscribed to it, so the selection went nowhere. Append it to whatever is already typed and
+	// put the caret at the end, the way the editor-context commands imply.
+	useEffect(() => {
+		const cleanup = UiServiceClient.subscribeToAddToInput({} as EmptyRequest, {
+			onResponse: (event) => {
+				const text = event?.value
+				if (!text) {
+					return
+				}
+				setInputValue((current) => (current.trim() ? `${current}\n${text}` : text))
+				const textArea = textAreaRef.current
+				if (textArea) {
+					// Defer: the value lands on the next render.
+					setTimeout(() => {
+						textArea.focus()
+						const end = textArea.value.length
+						textArea.setSelectionRange(end, end)
+					}, 0)
+				}
+			},
+			onError: (error) => console.error("Error in addToInput subscription:", error),
+			onComplete: () => {},
+		})
+		return cleanup
+	}, [])
 
 	return {
 		// State values

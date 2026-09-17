@@ -79,6 +79,51 @@ overwriting each other's state. No tab is created yet — the sidebar is still t
 
 ---
 
+## WP1b — "Add to Dirac" reaches the chat input, and the routing defect it exposed (merged 2026-09-16)
+
+**The defect WP1 introduced.** Keying each routed stream `Map<controllerId, handler>` assumed ONE
+subscriber per webview. The React app breaks that: `ChatViewContent` and `ModularChatView` both call
+`useChatState()`, so a single webview subscribes twice, and — because React runs a parent's effect
+after its child's — the surviving handler belonged to the outer component whose state renders nothing.
+Measured in the browser: the editor selection reached the controller (Dirac logged it) and the visible
+chat input stayed empty.
+
+**Fix:** every routed stream is now `Map<controllerId, Set<handler>>` — still routed per webview (no
+cross-talk between instances), but many subscribers inside one webview, as upstream's broadcast `Set`
+allowed. Applies to the nine files converted in WP1.
+
+**Upstream defect fixed in the fork:** nothing in `webview-ui/src` subscribed to `subscribeToAddToInput`,
+so "Add to Dirac" / "Add terminal output to chat" had never filled the input on 0.5.13.
+`webview-ui/src/features/modular-ui/chat/hooks/useChatState.ts` now subscribes, appends the text to
+whatever is already typed and puts the caret at the end. Verified in the browser: the mention plus the
+selected text land in the input, and a second add appends.
+
+**New tests** (`src/core/webview/__tests__/InstanceRegistry.spec.ts`,
+`src/core/controller/state/__tests__/subscribeToState.routing.test.ts`): 8 tests covering the last-active
+ladder, unregister/dispose semantics, `disposeAll` surviving a throwing `dispose()`, and — the regression
+that reached the browser — two subscribers of the same controller both receiving an update while another
+controller receives nothing.
+
+### ⚠️ The upstream unit suite TRUNCATES — what "75 failing" really means
+`npm run test:unit` **collects 4,337 tests but only runs ~2,498 of them.** A failing `afterEach` hook in
+`SubagentRunner` (the repo's own logger guard firing on
+`this.baseConfig.coordinator.createEmptySibling is not a function`) aborts every suite scheduled after it,
+so the run stops there and reports `2420 passing / 3 pending / 75 failing`. Proof: the same command with
+`--dry-run` reports **4337 passing**. This is upstream behaviour at `041fce18`, identical before and after
+the fork's changes.
+
+Consequences for this fork:
+- The suite number is still a valid regression gate *by failing-test name* (the truncation point is
+  deterministic), but it is **not** coverage: any test that sorts after `SubagentRunner` never runs,
+  including the fork's own `InstanceRegistry` tests.
+- Every work package therefore also runs `dirac_ext/logs/run-tests-ext.sh`, which greps the EXT tests
+  explicitly (`--grep "WebviewInstanceRegistry|subscribeToState routing|OpenTaskRegistry|Dirac EXT"`).
+  WP1b: **8 passing, exit 0**.
+- Fixing the upstream `SubagentRunner` mock would un-truncate ~1,800 tests. That is an upstream bug and a
+  separate piece of work; it is not part of the fork's scope.
+
+---
+
 ## Build-host facts (not fork changes — they bite every WP)
 
 - **`npm run package` needs `unzip`, which this container does not have.** `scripts/prepare-extension-ripgrep-binaries.mjs`

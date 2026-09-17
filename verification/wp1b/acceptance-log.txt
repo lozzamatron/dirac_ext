@@ -1,0 +1,8 @@
+chat input before: ""
+ran: "Dirac EXT: Add to Diracdirac-ext.addToChat Ctrl + '"
+chat input after Add to Dirac: "@/project_overview.md\n```\n# Dirac EXT — project overview\n\n\n```"
+PASS: the editor selection landed in the Dirac EXT chat input
+PASS: the selected text itself is in the input, not just the file mention
+chat input after a second add: "@/project_overview.md\n```\n# Dirac EXT — project overview\n\n\n```\n@/project_overview.md\n```\n(shared with the fork on purpose).\n\n```"
+PASS: a second Add to Dirac appended to the input instead of replacing it
+exit code: 0
