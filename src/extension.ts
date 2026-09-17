@@ -608,18 +608,53 @@ ${ctx.cellJson || "{}"}
 	backgroundTaskStatusBarItem.command = "dirac-ext.reattachBackgroundTask"
 	context.subscriptions.push(backgroundTaskStatusBarItem)
 
+	// Dirac EXT: a detached instance whose task has settled can never be re-attached to a surface,
+	// so it must not be counted or offered as "running in the background".
+	const getRunningBackgroundInstances = (): VscodeDiracWebviewProvider[] =>
+		DiracWebviewProvider.getTabInstances()
+			.map((instance) => instance as VscodeDiracWebviewProvider)
+			.filter((instance) => instance.isDetached?.() && isTaskMidTurn(instance.controller.task))
+
+	let backgroundTaskPollInterval: ReturnType<typeof setInterval> | undefined
+
 	const updateBackgroundTaskStatus = () => {
-		const detachedCount = DiracWebviewProvider.getTabInstances().filter((i) =>
-			(i as VscodeDiracWebviewProvider).isDetached?.(),
-		).length
-		if (detachedCount === 0) {
+		// Dirac EXT: reap settled detached instances first so their task claims are released and
+		// the conversation can be reopened from history.
+		for (const instance of [...DiracWebviewProvider.getTabInstances()]) {
+			const tabInstance = instance as VscodeDiracWebviewProvider
+			if (tabInstance.isDetached?.() && !isTaskMidTurn(tabInstance.controller.task)) {
+				void tabInstance.dispose()
+			}
+		}
+
+		const runningCount = getRunningBackgroundInstances().length
+		if (runningCount === 0) {
 			backgroundTaskStatusBarItem.hide()
+			if (backgroundTaskPollInterval) {
+				clearInterval(backgroundTaskPollInterval)
+				backgroundTaskPollInterval = undefined
+			}
 		} else {
-			backgroundTaskStatusBarItem.text = `$(sync~spin) Dirac EXT: ${detachedCount} running in background`
+			backgroundTaskStatusBarItem.text = `$(sync~spin) Dirac EXT: ${runningCount} running in background`
 			backgroundTaskStatusBarItem.tooltip = "Click to re-attach a Dirac EXT task that is still running"
 			backgroundTaskStatusBarItem.show()
+			// Dirac EXT: poll so the status bar corrects itself when a detached task finishes
+			// without requiring any user action.
+			if (!backgroundTaskPollInterval) {
+				backgroundTaskPollInterval = setInterval(() => updateBackgroundTaskStatus(), 5000)
+			}
 		}
 	}
+
+	// Dirac EXT: clear the poll interval on deactivation so it cannot leak.
+	context.subscriptions.push({
+		dispose: () => {
+			if (backgroundTaskPollInterval) {
+				clearInterval(backgroundTaskPollInterval)
+				backgroundTaskPollInterval = undefined
+			}
+		},
+	})
 
 	/**
 	 * True while the agent is mid-turn. A task that has finished sits at COMPLETED (or CANCELLED),
@@ -657,7 +692,16 @@ ${ctx.cellJson || "{}"}
 		)
 		// Closing a tab must never kill work in flight: detach while the agent is mid-turn, dispose
 		// once it has settled (a finished conversation is not "running in the background").
-		provider.setPanelCloseHandler((instance) => (isTaskMidTurn(instance.controller.task) ? "detach" : "dispose"))
+		provider.setPanelCloseHandler((instance) => {
+			const task = instance.controller.task
+			const action = isTaskMidTurn(task) ? "detach" : "dispose"
+			// Dirac EXT: closing a tab either keeps work alive or ends it, and the difference is
+			// invisible afterwards — record which one happened and the state it was decided from.
+			Logger.log(
+				`[Dirac EXT] Tab closed -> ${action} (status=${task?.taskState.status ?? "no task"}, apiActive=${task?.taskState.isApiRequestActive ?? false})`,
+			)
+			return action
+		})
 		await provider.resolveSurface(panel, { preserveTask: options?.preserveTask })
 		provider.markActive()
 		panel.onDidDispose(() => updateBackgroundTaskStatus())
@@ -668,6 +712,16 @@ ${ctx.cellJson || "{}"}
 		const owner = DiracWebviewProvider.getInstanceByControllerId(ownerControllerId) as
 			| VscodeDiracWebviewProvider
 			| undefined
+		// Dirac EXT: a detached owner has no panel, so reveal() would silently do nothing and leave
+		// the user with no view to look at.
+		if (owner?.isDetached?.()) {
+			HostProvider.window.showMessage({
+				type: ShowMessageType.INFORMATION,
+				message:
+					'That task is still running in the background. Use "Dirac EXT: Re-attach a Background Task" to bring it back.',
+			})
+			return
+		}
 		owner?.reveal()
 		HostProvider.window.showMessage({
 			type: ShowMessageType.INFORMATION,
@@ -705,8 +759,13 @@ ${ctx.cellJson || "{}"}
 				return
 			}
 			const taskId = task.taskId
-			await sidebar.controller.clearTask()
+			// Dirac EXT: create the tab before releasing the claim so the task is never unclaimed
+			// across the slow panel/surface setup, where a history click could steal it.
 			const tab = await openDiracTab(context, { preserveTask: true })
+			await sidebar.controller.clearTask()
+			// Dirac EXT: clearTask() does not publish state (the "+" button pairs it with this call), so
+			// without it the sidebar keeps rendering a conversation its controller no longer owns.
+			await sidebar.controller.postStateToWebview()
 			await tab.controller.reinitExistingTaskFromId(taskId)
 			tab.markActive()
 			updateBackgroundTaskStatus()
@@ -715,9 +774,7 @@ ${ctx.cellJson || "{}"}
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand("dirac-ext.reattachBackgroundTask", async () => {
-			const detached = DiracWebviewProvider.getTabInstances().filter(
-				(i) => (i as VscodeDiracWebviewProvider).isDetached?.(),
-			) as VscodeDiracWebviewProvider[]
+			const detached = getRunningBackgroundInstances()
 			if (detached.length === 0) {
 				HostProvider.window.showMessage({
 					type: ShowMessageType.INFORMATION,

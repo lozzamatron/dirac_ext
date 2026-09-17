@@ -87,7 +87,7 @@ export class VscodeDiracWebviewProvider extends DiracWebviewProvider implements 
 		if ("onDidChangeViewState" in this.webview) {
 			this.webview.reveal(undefined, preserveFocus)
 		} else {
-			this.webview.show(!preserveFocus)
+			this.webview.show(preserveFocus)
 		}
 	}
 
@@ -142,6 +142,9 @@ export class VscodeDiracWebviewProvider extends DiracWebviewProvider implements 
 		options?: { preserveTask?: boolean },
 	): Promise<void> {
 		this.webview = webviewView
+		// Dirac EXT: every surface binding must clear the detached flag, otherwise a re-attached
+		// tab keeps reporting isDetached() === true and stays in the background-task UI.
+		this.detached = false
 
 		webviewView.webview.options = {
 			// Allow scripts in the webview
@@ -330,7 +333,13 @@ export class VscodeDiracWebviewProvider extends DiracWebviewProvider implements 
 		// A WebviewPanel is owned by this provider and must be disposed explicitly;
 		// a WebviewView is managed by VSCode.
 		if (this.webview && "onDidChangeViewState" in this.webview) {
-			this.webview.dispose()
+			try {
+				this.webview.dispose()
+			} catch (error) {
+				// Dirac EXT: VS Code may have already disposed the panel before this runs, and a
+				// throw here would surface as an unhandled rejection in the async close listener.
+				Logger.debug(`[VscodeDiracWebviewProvider] Panel already disposed: ${error}`)
+			}
 		}
 		super.dispose()
 	}

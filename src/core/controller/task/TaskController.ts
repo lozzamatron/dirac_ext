@@ -273,99 +273,119 @@ export class TaskController {
 		// stop a second controller in this same window from opening the same task. Claim it here
 		// first; on conflict the owning webview is revealed and this init is abandoned quietly.
 		const controllerId = this.deps.controller?.id
-		if (controllerId && !openTasks.claim(taskId, controllerId)) {
-			Logger.warn(`[Task ${taskId}] Already open in another Dirac EXT view; not initializing a second copy`)
-			// The task id is real — it just belongs to the other view, which the conflict handler
-			// has revealed. This controller keeps no task, so its webview stays on the empty state.
-			return taskId
+		if (!controllerId) {
+			// Dirac EXT: without a controller id the process-local claim is skipped, so a second
+			// view could open this task; warn instead of silently hiding the broken invariant.
+			Logger.warn(`[Task ${taskId}] Initializing without a process-local claim: controller id is unavailable`)
 		}
-
-		let taskLockAcquired = false
-		const lockResult: FolderLockWithRetryResult = await this.tryAcquireTaskLockWithRetryFn(taskId)
-
-		if (!lockResult.acquired && !lockResult.skipped) {
-			const errorMessage = lockResult.conflictingLock
-				? `Task locked by instance (${lockResult.conflictingLock.held_by})`
-				: "Failed to acquire task lock"
-			throw new Error(errorMessage)
-		}
-
-		taskLockAcquired = lockResult.acquired
-		if (lockResult.acquired) {
-			Logger.debug(`[Task ${taskId}] Task lock acquired`)
-		} else {
-			Logger.debug(`[Task ${taskId}] Task lock skipped (VS Code)`)
+		let claimedHere = false
+		if (controllerId) {
+			if (!openTasks.claim(taskId, controllerId)) {
+				Logger.warn(`[Task ${taskId}] Already open in another Dirac EXT view; not initializing a second copy`)
+				// The task id is real — it just belongs to the other view, which the conflict handler
+				// has revealed. This controller keeps no task, so its webview stays on the empty state.
+				return taskId
+			}
+			claimedHere = true
 		}
 
 		try {
-			await this.deps.stateManager.loadTaskSettings(taskId)
-			if (taskSettings) {
-				this.deps.stateManager.setTaskSettingsBatch(taskId, taskSettings)
+			let taskLockAcquired = false
+			const lockResult: FolderLockWithRetryResult = await this.tryAcquireTaskLockWithRetryFn(taskId)
+
+			if (!lockResult.acquired && !lockResult.skipped) {
+				const errorMessage = lockResult.conflictingLock
+					? `Task locked by instance (${lockResult.conflictingLock.held_by})`
+					: "Failed to acquire task lock"
+				throw new Error(errorMessage)
 			}
 
-			const suppliedWorkingConfiguration = initializationOptions?.workingConfiguration
-			const workingConfiguration: TaskWorkingConfiguration = suppliedWorkingConfiguration
-				? createTaskWorkingConfiguration({
-						revision: suppliedWorkingConfiguration.revision,
-						settings: suppliedWorkingConfiguration.settings as Settings,
-						apiConfiguration: structuredClone(
-							suppliedWorkingConfiguration.apiConfiguration,
-						) as TaskWorkingConfigurationInput["apiConfiguration"],
-						workspaceConfiguration: structuredClone(
-							suppliedWorkingConfiguration.workspaceConfiguration,
-						) as TaskWorkingConfigurationInput["workspaceConfiguration"],
-						executionOptions: structuredClone(
-							suppliedWorkingConfiguration.executionOptions,
-						) as TaskWorkingConfigurationInput["executionOptions"],
-					})
-				: this.deps.stateManager.captureEffectiveTaskConfiguration(initializationOptions?.runtimeConfigurationOverrides)
-			const { settings, executionOptions } = workingConfiguration
+			taskLockAcquired = lockResult.acquired
+			if (lockResult.acquired) {
+				Logger.debug(`[Task ${taskId}] Task lock acquired`)
+			} else {
+				Logger.debug(`[Task ${taskId}] Task lock skipped (VS Code)`)
+			}
 
-			this._task = new Task({
-				controller,
-				updateTaskHistory: (historyItem) => this.deps.updateTaskHistory(historyItem),
-				postStateToWebview: () => this.deps.postStateToWebview(),
-				postPresentationToWebview: () => (this.deps.postPresentationToWebview ?? this.deps.postStateToWebview)(),
-				reinitExistingTaskFromId: (taskId) => this.reinitExistingTaskFromId(taskId),
-				cancelTask: () => this.cancelTask(),
-				shellIntegrationTimeout: settings.shellIntegrationTimeout,
-				terminalReuseEnabled: executionOptions.terminalReuseEnabled,
-				terminalOutputLineLimit: settings.terminalOutputLineLimit,
-				defaultTerminalProfile: settings.defaultTerminalProfile,
-				vscodeTerminalExecutionMode: executionOptions.vscodeTerminalExecutionMode,
-				cwd,
-				stateManager: this.deps.stateManager,
-				workingConfiguration,
-				workspaceManager: this._workspaceManager,
-				task,
-				images,
-				files,
-				historyItem,
-				taskId,
-				conversationUlid,
-				taskLockAcquired,
-				pinnedContext: initializationOptions?.pinnedContext,
-				onContextCompacted: initializationOptions?.onContextCompacted,
-				switchToActMode: initializationOptions?.switchToActMode,
-				toolSelectionPolicy: initializationOptions?.toolSelectionPolicy,
-				enqueuePreRequestSteeringMessages: async () => initializationOptions?.enqueueSteeringMessages?.(this._task!),
-			})
+			try {
+				await this.deps.stateManager.loadTaskSettings(taskId)
+				if (taskSettings) {
+					this.deps.stateManager.setTaskSettingsBatch(taskId, taskSettings)
+				}
+
+				const suppliedWorkingConfiguration = initializationOptions?.workingConfiguration
+				const workingConfiguration: TaskWorkingConfiguration = suppliedWorkingConfiguration
+					? createTaskWorkingConfiguration({
+							revision: suppliedWorkingConfiguration.revision,
+							settings: suppliedWorkingConfiguration.settings as Settings,
+							apiConfiguration: structuredClone(
+								suppliedWorkingConfiguration.apiConfiguration,
+							) as TaskWorkingConfigurationInput["apiConfiguration"],
+							workspaceConfiguration: structuredClone(
+								suppliedWorkingConfiguration.workspaceConfiguration,
+							) as TaskWorkingConfigurationInput["workspaceConfiguration"],
+							executionOptions: structuredClone(
+								suppliedWorkingConfiguration.executionOptions,
+							) as TaskWorkingConfigurationInput["executionOptions"],
+						})
+					: this.deps.stateManager.captureEffectiveTaskConfiguration(
+							initializationOptions?.runtimeConfigurationOverrides,
+						)
+				const { settings, executionOptions } = workingConfiguration
+
+				this._task = new Task({
+					controller,
+					updateTaskHistory: (historyItem) => this.deps.updateTaskHistory(historyItem),
+					postStateToWebview: () => this.deps.postStateToWebview(),
+					postPresentationToWebview: () => (this.deps.postPresentationToWebview ?? this.deps.postStateToWebview)(),
+					reinitExistingTaskFromId: (taskId) => this.reinitExistingTaskFromId(taskId),
+					cancelTask: () => this.cancelTask(),
+					shellIntegrationTimeout: settings.shellIntegrationTimeout,
+					terminalReuseEnabled: executionOptions.terminalReuseEnabled,
+					terminalOutputLineLimit: settings.terminalOutputLineLimit,
+					defaultTerminalProfile: settings.defaultTerminalProfile,
+					vscodeTerminalExecutionMode: executionOptions.vscodeTerminalExecutionMode,
+					cwd,
+					stateManager: this.deps.stateManager,
+					workingConfiguration,
+					workspaceManager: this._workspaceManager,
+					task,
+					images,
+					files,
+					historyItem,
+					taskId,
+					conversationUlid,
+					taskLockAcquired,
+					pinnedContext: initializationOptions?.pinnedContext,
+					onContextCompacted: initializationOptions?.onContextCompacted,
+					switchToActMode: initializationOptions?.switchToActMode,
+					toolSelectionPolicy: initializationOptions?.toolSelectionPolicy,
+					enqueuePreRequestSteeringMessages: async () => initializationOptions?.enqueueSteeringMessages?.(this._task!),
+				})
+			} catch (error) {
+				if (taskLockAcquired) {
+					await releaseTaskLock(taskId)
+				}
+				throw error
+			}
+
+			if (historyItem) {
+				await this.startHistoricalTaskAndWaitForRestore(this._task)
+			} else if (task || images || files) {
+				this.trackTaskRun(this.runTaskWithReplacement(this._task, this._task.startTask(task, images, files)))
+			} else {
+				this._taskRunPromise = undefined
+			}
+
+			return this._task.taskId
 		} catch (error) {
-			if (taskLockAcquired) {
-				await releaseTaskLock(taskId)
+			// Dirac EXT: a claim that outlives a failed init would block every later attempt to open
+			// this task in this window, so release only the claim this call actually took.
+			if (claimedHere && controllerId) {
+				openTasks.release(taskId, controllerId)
 			}
 			throw error
 		}
-
-		if (historyItem) {
-			await this.startHistoricalTaskAndWaitForRestore(this._task)
-		} else if (task || images || files) {
-			this.trackTaskRun(this.runTaskWithReplacement(this._task, this._task.startTask(task, images, files)))
-		} else {
-			this._taskRunPromise = undefined
-		}
-
-		return this._task.taskId
 	}
 
 	async reinitExistingTaskFromId(taskId: string, initializationOptions?: TaskInitializationOptions) {
