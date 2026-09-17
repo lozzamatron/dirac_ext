@@ -155,7 +155,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider(DIFF_VIEW_URI_SCHEME, diffContentProvider))
 	// Register commands for Accept/Reject from CodeLens
 	context.subscriptions.push(
-		vscode.commands.registerCommand("dirac.acceptEdit", async () => {
+		vscode.commands.registerCommand("dirac-ext.acceptEdit", async () => {
 			const sidebarInstance = DiracWebviewProvider.getInstance()
 			if (sidebarInstance.controller?.task) {
 				await sidebarInstance.controller.task.submitCardResponse("", DiracAskResponse.APPROVE)
@@ -164,7 +164,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	)
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand("dirac.saveWithMyChanges", async () => {
+		vscode.commands.registerCommand("dirac-ext.saveWithMyChanges", async () => {
 			const sidebarInstance = DiracWebviewProvider.getInstance()
 			if (sidebarInstance.controller?.task) {
 				await sidebarInstance.controller.task.submitCardResponse("", DiracAskResponse.APPROVE)
@@ -172,7 +172,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		}),
 	)
 	context.subscriptions.push(
-		vscode.commands.registerCommand("dirac.rejectEdit", async () => {
+		vscode.commands.registerCommand("dirac-ext.rejectEdit", async () => {
 			const sidebarInstance = DiracWebviewProvider.getInstance()
 			if (sidebarInstance.controller?.task) {
 				await sidebarInstance.controller.task.submitCardResponse("", DiracAskResponse.REJECT)

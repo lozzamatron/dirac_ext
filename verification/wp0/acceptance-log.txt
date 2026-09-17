@@ -1,0 +1,17 @@
+workbench: dirac_ext - code-server  (2026-09-17T02:25:08.387Z)
+activity bar: ["Explorer (Ctrl+Shift+E)","Search (Ctrl+Shift+F)","Source Control - 17 pending changes","Run and Debug (Ctrl+Shift+D)","Extensions (Ctrl+Shift+X)","Claude Code","Dirac","Kilo Code","Dirac EXT"]
+PASS: activity bar carries a 'Dirac EXT' container
+PASS: upstream 'Dirac' container is still there (installs side-by-side)
+webview text (first 220): "RECENT View All \"It is more important to have beauty in one's code than to have it pass the tests\" Do not use any tools and do not read or write any files. Reply with exactly this text and then complete the task: DIRAC-E"
+PASS: webview reports the forked version v0.5.13
+PASS: webview inherited the shared ~/.dirac provider config
+sidebar boundingBox: {"x":44,"y":35,"width":294,"height":931}  title: "Dirac EXT"
+PASS: sidebar is open and wider than 250px
+palette rows for "Dirac EXT: ": ["Dirac EXT: Add to Diracdirac-ext.addToChat","Dirac EXT: Add to Diracdirac-ext.addTerminalOutputToChat","Dirac EXT: Add to Dirac Chat","Dirac EXT: Create Test Tasks","Dirac EXT: Explain Jupyter Cell with Dirac","Dirac EXT: Explain with Dirac","Dirac EXT: Focus on View","Dirac EXT: Generate Commit Message with Dirac","Dirac EXT: Generate Jupyter Cell with Dirac","Dirac EXT: Improve Jupyter Cell with Dirac"]
+PASS: command palette lists Dirac EXT commands
+task submitted (marker DIRAC-EXT-WP0-MU4WQ8NI), waiting for the model…
+PASS: the chat input cleared, i.e. the task was actually submitted
+transcript tail: "Do not use any tools and do not read or write any files. Reply with exactly this text and then complete the task: DIRAC-EXT-WP0-MU4WQ8NI CTX 5.9k n/a 80% cache Thinking Task Completed DIRAC-EXT-WP0-MU4WQ8NI View Changes Autonomy: Approve All Start New Task openai:glm-5.3-flash Plan Act"
+PASS: the task ran to completion and the answer contains DIRAC-EXT-WP0-MU4WQ8NI
+PASS: transcript shows a context/token accounting row (CTX …)
+exit code: 0

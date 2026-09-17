@@ -1,7 +1,7 @@
 {
-    "name": "dirac",
-    "displayName": "Dirac",
-    "description": "Reduces API costs by more than 50%, produces better and faster work. Uses line-anchored parallel edits, AST manipulation and a whole lot of neat optimizations. Fully Open Source.",
+    "name": "dirac-ext",
+    "displayName": "Dirac EXT",
+    "description": "Dirac EXT — a fork of Dirac adding editor-tab instances, several simultaneous conversations, an Agent Map and a TokenSlayer tool. Reduces API costs by more than 50%, produces better and faster work. Uses line-anchored parallel edits, AST manipulation and a whole lot of neat optimizations. Fully Open Source.",
     "version": "0.5.13",
     "icon": "assets/icons/icon.png",
     "workspaces": [
@@ -15,7 +15,7 @@
         "name": "Dirac Delta Labs"
     },
     "license": "Apache-2.0",
-    "publisher": "dirac-run",
+    "publisher": "lozza",
     "repository": {
         "type": "git",
         "url": "https://github.com/dirac-run/dirac"
@@ -127,136 +127,136 @@
         "viewsContainers": {
             "activitybar": [
                 {
-                    "id": "dirac-ActivityBar",
-                    "title": "Dirac",
-                    "icon": "assets/icons/icon.svg"
+                    "id": "dirac-ext-ActivityBar",
+                    "title": "Dirac EXT",
+                    "icon": "assets/icons/icon-ext.svg"
                 }
             ]
         },
         "views": {
-            "dirac-ActivityBar": [
+            "dirac-ext-ActivityBar": [
                 {
                     "type": "webview",
-                    "id": "dirac.SidebarProvider",
+                    "id": "dirac-ext.SidebarProvider",
                     "name": "",
-                    "icon": "assets/icons/icon.svg"
+                    "icon": "assets/icons/icon-ext.svg"
                 }
             ]
         },
         "commands": [
             {
-                "command": "dirac.plusButtonClicked",
+                "command": "dirac-ext.plusButtonClicked",
                 "title": "New Task",
                 "icon": "$(add)"
             },
             {
-                "command": "dirac.historyButtonClicked",
+                "command": "dirac-ext.historyButtonClicked",
                 "title": "History",
                 "icon": "$(history)"
             },
             {
-                "command": "dirac.settingsButtonClicked",
+                "command": "dirac-ext.settingsButtonClicked",
                 "title": "Settings",
                 "icon": "$(settings-gear)"
             },
             {
-                "command": "dirac.dev.createTestTasks",
+                "command": "dirac-ext.dev.createTestTasks",
                 "title": "Create Test Tasks",
-                "category": "Dirac",
+                "category": "Dirac EXT",
                 "when": "dirac.isDevMode"
             },
             {
-                "command": "dirac.addToChat",
+                "command": "dirac-ext.addToChat",
                 "title": "Add to Dirac",
-                "category": "Dirac"
+                "category": "Dirac EXT"
             },
             {
-                "command": "dirac.addTerminalOutputToChat",
+                "command": "dirac-ext.addTerminalOutputToChat",
                 "title": "Add to Dirac",
-                "category": "Dirac"
+                "category": "Dirac EXT"
             },
             {
-                "command": "dirac.focusChatInput",
+                "command": "dirac-ext.focusChatInput",
                 "title": "Jump to Chat Input",
-                "category": "Dirac"
+                "category": "Dirac EXT"
             },
             {
-                "command": "dirac.generateGitCommitMessage",
+                "command": "dirac-ext.generateGitCommitMessage",
                 "title": "Generate Commit Message with Dirac",
-                "category": "Dirac",
+                "category": "Dirac EXT",
                 "icon": {
                     "light": "assets/icons/icon-light.svg",
                     "dark": "assets/icons/icon-dark.svg"
                 }
             },
             {
-                "command": "dirac.abortGitCommitMessage",
+                "command": "dirac-ext.abortGitCommitMessage",
                 "title": "Generate Commit Message with Dirac - Stop",
-                "category": "Dirac",
+                "category": "Dirac EXT",
                 "icon": "$(debug-stop)"
             },
             {
-                "command": "dirac.explainCode",
+                "command": "dirac-ext.explainCode",
                 "title": "Explain with Dirac",
-                "category": "Dirac"
+                "category": "Dirac EXT"
             },
             {
-                "command": "dirac.improveCode",
+                "command": "dirac-ext.improveCode",
                 "title": "Improve with Dirac",
-                "category": "Dirac"
+                "category": "Dirac EXT"
             },
             {
-                "command": "dirac.jupyterGenerateCell",
+                "command": "dirac-ext.jupyterGenerateCell",
                 "title": "Generate Jupyter Cell with Dirac",
-                "category": "Dirac",
+                "category": "Dirac EXT",
                 "icon": "$(sparkle)"
             },
             {
-                "command": "dirac.jupyterExplainCell",
+                "command": "dirac-ext.jupyterExplainCell",
                 "title": "Explain Jupyter Cell with Dirac",
-                "category": "Dirac",
+                "category": "Dirac EXT",
                 "icon": "$(question)"
             },
             {
-                "command": "dirac.jupyterImproveCell",
+                "command": "dirac-ext.jupyterImproveCell",
                 "title": "Improve Jupyter Cell with Dirac",
-                "category": "Dirac",
+                "category": "Dirac EXT",
                 "icon": "$(lightbulb)"
             },
             {
-                "command": "dirac.openWalkthrough",
+                "command": "dirac-ext.openWalkthrough",
                 "title": "Open Walkthrough",
-                "category": "Dirac"
+                "category": "Dirac EXT"
             },
             {
-                "command": "dirac.reconstructTaskHistory",
+                "command": "dirac-ext.reconstructTaskHistory",
                 "title": "Reconstruct Task History",
-                "category": "Dirac"
+                "category": "Dirac EXT"
             },
             {
-                "command": "dirac.reviewComment.reply",
+                "command": "dirac-ext.reviewComment.reply",
                 "title": "Reply",
-                "category": "Dirac",
+                "category": "Dirac EXT",
                 "enablement": "!commentIsEmpty"
             },
             {
-                "command": "dirac.reviewComment.addToChat",
+                "command": "dirac-ext.reviewComment.addToChat",
                 "title": "Add to Dirac Chat",
-                "category": "Dirac",
+                "category": "Dirac EXT",
                 "icon": "$(link-external)"
             },
             {
-                "command": "dirac.acceptEdit",
+                "command": "dirac-ext.acceptEdit",
                 "title": "Accept",
                 "icon": "assets/icons/review-accept.svg"
             },
             {
-                "command": "dirac.saveWithMyChanges",
+                "command": "dirac-ext.saveWithMyChanges",
                 "title": "Save with My Changes",
                 "icon": "assets/icons/review-save.svg"
             },
             {
-                "command": "dirac.rejectEdit",
+                "command": "dirac-ext.rejectEdit",
                 "title": "Reject",
                 "icon": "assets/icons/review-reject.svg"
             }
@@ -268,7 +268,7 @@
                 "when": "commentEditorFocused && commentController == dirac-ai-review && !commentIsEmpty"
             },
             {
-                "command": "dirac.addToChat",
+                "command": "dirac-ext.addToChat",
                 "key": "cmd+'",
                 "mac": "cmd+'",
                 "win": "ctrl+'",
@@ -276,7 +276,7 @@
                 "when": "editorHasSelection"
             },
             {
-                "command": "dirac.focusChatInput",
+                "command": "dirac-ext.focusChatInput",
                 "key": "cmd+'",
                 "mac": "cmd+'",
                 "win": "ctrl+'",
@@ -287,113 +287,113 @@
         "menus": {
             "editor/title": [
                 {
-                    "command": "dirac.acceptEdit",
+                    "command": "dirac-ext.acceptEdit",
                     "group": "navigation@1",
                     "when": "dirac.isFileUnderReview && !dirac.isFileModified"
                 },
                 {
-                    "command": "dirac.saveWithMyChanges",
+                    "command": "dirac-ext.saveWithMyChanges",
                     "group": "navigation@1",
                     "when": "dirac.isFileUnderReview && dirac.isFileModified"
                 },
                 {
-                    "command": "dirac.rejectEdit",
+                    "command": "dirac-ext.rejectEdit",
                     "group": "navigation@2",
                     "when": "dirac.isFileUnderReview"
                 }
             ],
             "view/title": [
                 {
-                    "command": "dirac.plusButtonClicked",
+                    "command": "dirac-ext.plusButtonClicked",
                     "group": "navigation@1",
-                    "when": "view == dirac.SidebarProvider"
+                    "when": "view == dirac-ext.SidebarProvider"
                 },
                 {
-                    "command": "dirac.historyButtonClicked",
+                    "command": "dirac-ext.historyButtonClicked",
                     "group": "navigation@3",
-                    "when": "view == dirac.SidebarProvider"
+                    "when": "view == dirac-ext.SidebarProvider"
                 },
                 {
-                    "command": "dirac.settingsButtonClicked",
+                    "command": "dirac-ext.settingsButtonClicked",
                     "group": "navigation@6",
-                    "when": "view == dirac.SidebarProvider"
+                    "when": "view == dirac-ext.SidebarProvider"
                 }
             ],
             "editor/context": [
                 {
-                    "command": "dirac.addToChat",
+                    "command": "dirac-ext.addToChat",
                     "group": "navigation",
                     "when": "editorHasSelection"
                 }
             ],
             "terminal/context": [
                 {
-                    "command": "dirac.addTerminalOutputToChat",
+                    "command": "dirac-ext.addTerminalOutputToChat",
                     "group": "navigation"
                 }
             ],
             "scm/title": [
                 {
-                    "command": "dirac.generateGitCommitMessage",
+                    "command": "dirac-ext.generateGitCommitMessage",
                     "group": "navigation",
                     "when": "config.git.enabled && scmProvider == git && !dirac.isGeneratingCommit"
                 },
                 {
-                    "command": "dirac.abortGitCommitMessage",
+                    "command": "dirac-ext.abortGitCommitMessage",
                     "group": "navigation",
                     "when": "config.git.enabled && scmProvider == git && dirac.isGeneratingCommit"
                 }
             ],
             "notebook/toolbar": [
                 {
-                    "command": "dirac.jupyterGenerateCell",
+                    "command": "dirac-ext.jupyterGenerateCell",
                     "group": "navigation/add@1",
                     "when": "notebookType == 'jupyter-notebook'"
                 }
             ],
             "notebook/cell/title": [
                 {
-                    "command": "dirac.jupyterExplainCell",
+                    "command": "dirac-ext.jupyterExplainCell",
                     "group": "inline@1",
                     "when": "notebookType == 'jupyter-notebook'"
                 },
                 {
-                    "command": "dirac.jupyterImproveCell",
+                    "command": "dirac-ext.jupyterImproveCell",
                     "group": "inline@2",
                     "when": "notebookType == 'jupyter-notebook'"
                 }
             ],
             "commandPalette": [
                 {
-                    "command": "dirac.generateGitCommitMessage",
+                    "command": "dirac-ext.generateGitCommitMessage",
                     "when": "config.git.enabled && !dirac.isGeneratingCommit"
                 },
                 {
-                    "command": "dirac.abortGitCommitMessage",
+                    "command": "dirac-ext.abortGitCommitMessage",
                     "when": "config.git.enabled && dirac.isGeneratingCommit"
                 },
                 {
-                    "command": "dirac.reviewComment.reply",
+                    "command": "dirac-ext.reviewComment.reply",
                     "when": "false"
                 }
             ],
             "comments/commentThread/context": [
                 {
-                    "command": "dirac.reviewComment.reply",
+                    "command": "dirac-ext.reviewComment.reply",
                     "group": "inline",
                     "when": "commentController == dirac-ai-review"
                 }
             ],
             "comments/commentThread/title": [
                 {
-                    "command": "dirac.reviewComment.addToChat",
+                    "command": "dirac-ext.reviewComment.addToChat",
                     "group": "inline",
                     "when": "commentController == dirac-ai-review"
                 }
             ]
         },
         "configuration": {
-            "title": "Dirac",
+            "title": "Dirac EXT",
             "properties": {
                 "dirac.planActToggleShortcut": {
                     "type": "string",
