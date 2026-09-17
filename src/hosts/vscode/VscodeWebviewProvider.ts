@@ -18,8 +18,11 @@ export class VscodeDiracWebviewProvider extends DiracWebviewProvider implements 
 	// views based on their id, and updating the id would break existing instances of the extension.
 	public static readonly SIDEBAR_ID = ExtensionRegistryInfo.views.Sidebar
 
-	private webview?: vscode.WebviewView
+	private webview?: vscode.WebviewView | vscode.WebviewPanel
 	private disposables: vscode.Disposable[] = []
+	private disposed = false
+	private panelCloseHandler?: (instance: VscodeDiracWebviewProvider) => "detach" | "dispose"
+	private detached = false
 
 	override getWebviewUrl(path: string) {
 		if (!this.webview) {
@@ -57,7 +60,66 @@ export class VscodeDiracWebviewProvider extends DiracWebviewProvider implements 
 	}
 
 	public getWebview(): vscode.WebviewView | undefined {
+		if (this.webview && "onDidChangeViewState" in this.webview) {
+			return undefined
+		}
 		return this.webview
+	}
+
+	/** Returns the editor-tab panel when this instance is hosted in a panel, else undefined. */
+	public getPanel(): vscode.WebviewPanel | undefined {
+		if (this.webview && "onDidChangeViewState" in this.webview) {
+			return this.webview
+		}
+		return undefined
+	}
+
+	/** Sets the policy used when a panel is closed; defaults to disposing the instance. */
+	public setPanelCloseHandler(handler: (instance: VscodeDiracWebviewProvider) => "detach" | "dispose"): void {
+		this.panelCloseHandler = handler
+	}
+
+	/** Brings this instance forward, optionally preserving focus. */
+	public reveal(preserveFocus = false): void {
+		if (!this.webview) {
+			return
+		}
+		if ("onDidChangeViewState" in this.webview) {
+			this.webview.reveal(undefined, preserveFocus)
+		} else {
+			this.webview.show(!preserveFocus)
+		}
+	}
+
+	/** Sets the panel title when this instance is a panel; a no-op for the sidebar view. */
+	public setTitle(title: string): void {
+		if (this.webview && "onDidChangeViewState" in this.webview) {
+			this.webview.title = title
+		}
+	}
+
+	/** Detaches this instance from its panel while keeping the controller and task alive. */
+	public detach(): void {
+		while (this.disposables.length) {
+			const x = this.disposables.pop()
+			if (x) {
+				x.dispose()
+			}
+		}
+		this.webview = undefined
+		this.detached = true
+		Logger.log("[VscodeDiracWebviewProvider] Tab detached, task kept running")
+	}
+
+	/** Returns true when this instance is detached from its panel but still alive. */
+	public isDetached(): boolean {
+		return this.detached
+	}
+
+	/** Binds this detached instance and its live controller to a new panel. */
+	public async reattach(panel: vscode.WebviewPanel): Promise<void> {
+		this.detached = false
+		await this.resolveSurface(panel, { preserveTask: true })
 	}
 
 	/**
@@ -66,7 +128,19 @@ export class VscodeDiracWebviewProvider extends DiracWebviewProvider implements 
 	 * @param webviewView - The sidebar webview view instance to be resolved
 	 * @returns A promise that resolves when the webview has been fully initialized
 	 */
+	/**
+	 * `vscode.WebviewViewProvider` implementation for the sidebar. VS Code's interface fixes this
+	 * signature, so the surface-agnostic work lives in `resolveSurface`, which editor tabs call.
+	 */
 	public async resolveWebviewView(webviewView: vscode.WebviewView): Promise<void> {
+		await this.resolveSurface(webviewView)
+	}
+
+	/** Binds this instance to a sidebar view or an editor-tab panel. */
+	public async resolveSurface(
+		webviewView: vscode.WebviewView | vscode.WebviewPanel,
+		options?: { preserveTask?: boolean },
+	): Promise<void> {
 		this.webview = webviewView
 
 		webviewView.webview.options = {
@@ -90,30 +164,55 @@ export class VscodeDiracWebviewProvider extends DiracWebviewProvider implements 
 		// Listen for when the sidebar becomes visible
 		// https://github.com/microsoft/vscode-discussions/discussions/840
 
-		// onDidChangeVisibility is only available on the sidebar webview
-		// Otherwise WebviewView and WebviewPanel have all the same properties except for this visibility listener
-		// WebviewPanel is not currently used in the extension
-		webviewView.onDidChangeVisibility(
-			async () => {
-				if (this.webview?.visible) {
-					// View becoming visible should not steal editor focus.
-					this.markActive()
-					await sendShowWebviewEvent(this.controller.id, true)
-				}
-			},
-			null,
-			this.disposables,
-		)
-
-		// Listen for when the view is disposed
-		// This happens when the user closes the view or when the view is closed programmatically
-		webviewView.onDidDispose(
-			async () => {
-				await this.dispose()
-			},
-			null,
-			this.disposables,
-		)
+		// WebviewView and WebviewPanel share most properties, but the visibility
+		// listener differs: a panel exposes onDidChangeViewState, a sidebar view
+		// exposes onDidChangeVisibility.
+		if ("onDidChangeViewState" in webviewView) {
+			// panel
+			webviewView.onDidChangeViewState(
+				async () => {
+					if (this.webview && "active" in this.webview && this.webview.active) {
+						// View becoming visible should not steal editor focus.
+						this.markActive()
+						await sendShowWebviewEvent(this.controller.id, true)
+					}
+				},
+				null,
+				this.disposables,
+			)
+			webviewView.onDidDispose(
+				async () => {
+					const action = this.panelCloseHandler?.(this) ?? "dispose"
+					if (action === "detach") {
+						this.detach()
+					} else {
+						await this.dispose()
+					}
+				},
+				null,
+				this.disposables,
+			)
+		} else {
+			// sidebar
+			webviewView.onDidChangeVisibility(
+				async () => {
+					if (this.webview?.visible) {
+						// View becoming visible should not steal editor focus.
+						this.markActive()
+						await sendShowWebviewEvent(this.controller.id, true)
+					}
+				},
+				null,
+				this.disposables,
+			)
+			webviewView.onDidDispose(
+				async () => {
+					await this.dispose()
+				},
+				null,
+				this.disposables,
+			)
+		}
 
 		// Listen for configuration changes
 		vscode.workspace.onDidChangeConfiguration(
@@ -133,7 +232,10 @@ export class VscodeDiracWebviewProvider extends DiracWebviewProvider implements 
 		)
 
 		// if the extension is starting a new session, clear previous task state
-		this.controller.clearTask()
+		// preserveTask is set when re-attaching a detached panel so the running task is not cleared.
+		if (!options?.preserveTask) {
+			this.controller.clearTask()
+		}
 
 		Logger.log("[VscodeDiracWebviewProvider] Webview view resolved")
 
@@ -213,6 +315,10 @@ export class VscodeDiracWebviewProvider extends DiracWebviewProvider implements 
 	}
 
 	override async dispose() {
+		if (this.disposed) {
+			return
+		}
+		this.disposed = true
 		// WebviewView doesn't have a dispose method, it's managed by VSCode
 		// We just need to clean up our disposables
 		while (this.disposables.length) {
@@ -220,6 +326,11 @@ export class VscodeDiracWebviewProvider extends DiracWebviewProvider implements 
 			if (x) {
 				x.dispose()
 			}
+		}
+		// A WebviewPanel is owned by this provider and must be disposed explicitly;
+		// a WebviewView is managed by VSCode.
+		if (this.webview && "onDidChangeViewState" in this.webview) {
+			this.webview.dispose()
 		}
 		super.dispose()
 	}

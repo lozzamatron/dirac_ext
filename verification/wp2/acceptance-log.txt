@@ -1,0 +1,30 @@
+workbench: project_overview.md - dirac_ext - code-server  (2026-09-17T04:54:08.330Z)
+Dirac webviews now open: [{"id":"01M2PVDNRANJCVA6S74E657342","surface":"sidebar"},{"id":"01M2PVE8SHX4D7326YMBC6PD52","surface":"tab"},{"id":"01M2PVEGQG70W5PVJNX1AG05A2","surface":"tab"}]
+PASS: three Dirac EXT webviews are live (one sidebar + two tabs)
+PASS: every instance has a DISTINCT controller id
+PASS: two of them report surface 'tab'
+PASS: exactly one reports surface 'sidebar'
+editor tabs: ["project_overview.md","Dirac EXT","Dirac EXT"]
+sidebar boundingBox with tabs open: {"x":44,"y":35,"width":294,"height":931}
+PASS: the side bar is still open next to the Dirac tabs
+PASS: surface "sidebar" came forward and accepted a prompt
+PASS: surface "sidebar" is a DIFFERENT instance from the ones already used (01M2PVDNRANJCVA6S74E657342)
+submitted DIRAC-EXT-WP2-MU5225JH-0 to sidebar instance 01M2PVDNRANJCVA6S74E657342
+PASS: surface 0 came forward and accepted a prompt
+PASS: surface 0 is a DIFFERENT instance from the ones already used (01M2PVE8SHX4D7326YMBC6PD52)
+submitted DIRAC-EXT-WP2-MU5225JH-1 to tab instance 01M2PVE8SHX4D7326YMBC6PD52
+PASS: surface 1 came forward and accepted a prompt
+FAIL: surface 1 is a DIFFERENT instance from the ones already used (01M2PVE8SHX4D7326YMBC6PD52)
+submitted DIRAC-EXT-WP2-MU5225JH-2 to tab instance 01M2PVE8SHX4D7326YMBC6PD52
+PASS: a task was started in all three instances
+PASS: sidebar instance ran its own task to completion (DIRAC-EXT-WP2-MU5225JH-0)
+PASS: sidebar instance shows NONE of the other conversations (found [])
+PASS: tab instance ran its own task to completion (DIRAC-EXT-WP2-MU5225JH-1)
+FAIL: tab instance shows NONE of the other conversations (found ["DIRAC-EXT-WP2-MU5225JH-2"])
+PASS: tab instance ran its own task to completion (DIRAC-EXT-WP2-MU5225JH-2)
+FAIL: tab instance shows NONE of the other conversations (found ["DIRAC-EXT-WP2-MU5225JH-1"])
+editor tabs 3 -> 3
+FAIL: Move Conversation to a Tab opened one more editor tab
+instances showing the moved conversation: []
+FAIL: the moved conversation is now open in a tab
+PASS: the sidebar no longer shows the moved conversation

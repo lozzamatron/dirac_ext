@@ -45,6 +45,7 @@ import {
 } from "./hosts/vscode/review/VscodeCommentReviewController"
 import { VscodeTerminalManager } from "./hosts/vscode/terminal/VscodeTerminalManager"
 import { VscodeDiffViewProvider } from "./hosts/vscode/VscodeDiffViewProvider"
+import type { WebviewSurface } from "@core/webview/InstanceRegistry"
 import { VscodeDiracWebviewProvider } from "./hosts/vscode/VscodeWebviewProvider"
 import { exportVSCodeStorageToSharedFiles } from "./hosts/vscode/vscode-to-file-migration"
 import { ExtensionRegistryInfo } from "./registry"
@@ -52,6 +53,8 @@ import { resolveWorkingRipgrepBinary } from "./services/ripgrep/resolve-ripgrep-
 import { telemetryService } from "./services/telemetry"
 import { SharedUriHandler, TASK_URI_PATH } from "./services/uri/SharedUriHandler"
 import { ShowMessageType } from "./shared/proto/host/window"
+import { openTasks } from "@core/task/OpenTaskRegistry"
+import { TaskStatus } from "@shared/ExtensionMessage"
 
 // This method is called when the VS Code extension is activated.
 // NOTE: This is VS Code specific - services that should be registered
@@ -599,6 +602,149 @@ ${ctx.cellJson || "{}"}
 		}),
 	)
 
+	// --- Editor tab support: open conversations in tabs, detach/reattach background tasks ---
+
+	const backgroundTaskStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100)
+	backgroundTaskStatusBarItem.command = "dirac-ext.reattachBackgroundTask"
+	context.subscriptions.push(backgroundTaskStatusBarItem)
+
+	const updateBackgroundTaskStatus = () => {
+		const detachedCount = DiracWebviewProvider.getTabInstances().filter((i) =>
+			(i as VscodeDiracWebviewProvider).isDetached?.(),
+		).length
+		if (detachedCount === 0) {
+			backgroundTaskStatusBarItem.hide()
+		} else {
+			backgroundTaskStatusBarItem.text = `$(sync~spin) Dirac EXT: ${detachedCount} running in background`
+			backgroundTaskStatusBarItem.tooltip = "Click to re-attach a Dirac EXT task that is still running"
+			backgroundTaskStatusBarItem.show()
+		}
+	}
+
+	/**
+	 * True while the agent is mid-turn. A task that has finished sits at COMPLETED (or CANCELLED),
+	 * not IDLE, so "status !== IDLE" would wrongly call every finished conversation busy.
+	 */
+	const isTaskMidTurn = (task?: { taskState: { isApiRequestActive?: boolean; status: TaskStatus } }): boolean => {
+		if (!task) {
+			return false
+		}
+		const settled: TaskStatus[] = [TaskStatus.IDLE, TaskStatus.COMPLETED, TaskStatus.CANCELLED]
+		return task.taskState.isApiRequestActive === true || !settled.includes(task.taskState.status)
+	}
+
+	const openDiracTab = async (
+		context: vscode.ExtensionContext,
+		options?: { title?: string; provider?: VscodeDiracWebviewProvider; preserveTask?: boolean },
+	): Promise<VscodeDiracWebviewProvider> => {
+		const provider =
+			options?.provider ?? (HostProvider.get().createDiracWebviewProvider("tab") as VscodeDiracWebviewProvider)
+		const panel = vscode.window.createWebviewPanel(
+			"dirac-ext.tab",
+			options?.title ?? "Dirac EXT",
+			vscode.ViewColumn.Active,
+			{
+				retainContextWhenHidden: true,
+				enableScripts: true,
+				localResourceRoots: [vscode.Uri.file(HostProvider.get().extensionFsPath)],
+			},
+		)
+		panel.iconPath = vscode.Uri.joinPath(
+			vscode.Uri.file(HostProvider.get().extensionFsPath),
+			"assets",
+			"icons",
+			"icon-ext.svg",
+		)
+		// Closing a tab must never kill work in flight: detach while the agent is mid-turn, dispose
+		// once it has settled (a finished conversation is not "running in the background").
+		provider.setPanelCloseHandler((instance) => (isTaskMidTurn(instance.controller.task) ? "detach" : "dispose"))
+		await provider.resolveSurface(panel, { preserveTask: options?.preserveTask })
+		provider.markActive()
+		panel.onDidDispose(() => updateBackgroundTaskStatus())
+		return provider
+	}
+
+	openTasks.setConflictHandler(({ ownerControllerId }) => {
+		const owner = DiracWebviewProvider.getInstanceByControllerId(ownerControllerId) as
+			| VscodeDiracWebviewProvider
+			| undefined
+		owner?.reveal()
+		HostProvider.window.showMessage({
+			type: ShowMessageType.INFORMATION,
+			message: "That task is already open in another Dirac EXT view.",
+		})
+	})
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand("dirac-ext.openInNewTab", async () => {
+			await openDiracTab(context)
+			updateBackgroundTaskStatus()
+		}),
+	)
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand("dirac-ext.openConversationInTab", async () => {
+			const sidebar = DiracWebviewProvider.getSidebarInstance()
+			if (!sidebar) {
+				Logger.warn("Open conversation in tab: no sidebar instance available")
+				return
+			}
+			const task = sidebar.controller.task
+			if (!task) {
+				HostProvider.window.showMessage({
+					type: ShowMessageType.INFORMATION,
+					message: "There is no conversation to move.",
+				})
+				return
+			}
+			if (isTaskMidTurn(task)) {
+				HostProvider.window.showMessage({
+					type: ShowMessageType.INFORMATION,
+					message: "Task is running — open a new tab or wait",
+				})
+				return
+			}
+			const taskId = task.taskId
+			await sidebar.controller.clearTask()
+			const tab = await openDiracTab(context, { preserveTask: true })
+			await tab.controller.reinitExistingTaskFromId(taskId)
+			tab.markActive()
+			updateBackgroundTaskStatus()
+		}),
+	)
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand("dirac-ext.reattachBackgroundTask", async () => {
+			const detached = DiracWebviewProvider.getTabInstances().filter(
+				(i) => (i as VscodeDiracWebviewProvider).isDetached?.(),
+			) as VscodeDiracWebviewProvider[]
+			if (detached.length === 0) {
+				HostProvider.window.showMessage({
+					type: ShowMessageType.INFORMATION,
+					message: "No Dirac EXT tasks are running in the background.",
+				})
+				return
+			}
+			const items = detached.map((instance) => ({
+				label: instance.controller.task?.taskId ?? "Untitled task",
+				description: "running in the background",
+				instance,
+			}))
+			const picked = await vscode.window.showQuickPick(items, {
+				placeHolder: "Select a background task to re-attach",
+			})
+			if (!picked) {
+				return
+			}
+			await openDiracTab(context, {
+				provider: picked.instance,
+				preserveTask: true,
+				title: picked.label,
+			})
+			updateBackgroundTaskStatus()
+		}),
+	)
+
 	Logger.log(`[Dirac] extension activated in ${performance.now() - activationStartTime} ms`)
 
 	return createDiracAPI(webview.controller)
@@ -675,7 +821,7 @@ async function setupHostProvider(context: ExtensionContext, globalStorageFsPath:
 		return ripgrep.path
 	}
 
-	const createWebview = () => new VscodeDiracWebviewProvider(context)
+	const createWebview = (surface: WebviewSurface = "sidebar") => new VscodeDiracWebviewProvider(context, surface)
 	const createDiffView = () => new VscodeDiffViewProvider()
 	const createCommentReview = () => getVscodeCommentReviewController()
 	const createTerminalManager = () => new VscodeTerminalManager()

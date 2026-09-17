@@ -14,6 +14,7 @@ import { getCwd, getDesktopDir } from "@/utils/path"
 import type { StateManager } from "../../storage/StateManager"
 import { Task } from "../../task"
 import { deserializeTaskError, type TaskRunOutcome } from "../../task/TaskRunOutcome"
+import { openTasks } from "../../task/OpenTaskRegistry"
 import { releaseTaskLock, tryAcquireTaskLockWithRetry } from "../../task/TaskLockUtils"
 import { detectWorkspaceRoots } from "../../workspace/detection"
 import { setupWorkspaceManager } from "../../workspace/setup"
@@ -268,6 +269,17 @@ export class TaskController {
 
 		const taskId = historyItem?.id || Date.now().toString()
 
+		// Dirac EXT: the SQLite lock below is keyed by a per-PROCESS instance address, so it cannot
+		// stop a second controller in this same window from opening the same task. Claim it here
+		// first; on conflict the owning webview is revealed and this init is abandoned quietly.
+		const controllerId = this.deps.controller?.id
+		if (controllerId && !openTasks.claim(taskId, controllerId)) {
+			Logger.warn(`[Task ${taskId}] Already open in another Dirac EXT view; not initializing a second copy`)
+			// The task id is real — it just belongs to the other view, which the conflict handler
+			// has revealed. This controller keeps no task, so its webview stays on the empty state.
+			return taskId
+		}
+
 		let taskLockAcquired = false
 		const lockResult: FolderLockWithRetryResult = await this.tryAcquireTaskLockWithRetryFn(taskId)
 
@@ -463,6 +475,11 @@ export class TaskController {
 
 	async clearTask() {
 		const task = this._task
+		const controllerId = this.deps.controller?.id
+		if (task && controllerId) {
+			// Dirac EXT: hand the task back so another view (or a tab) can open it.
+			openTasks.release(task.taskId, controllerId)
+		}
 		if (task) {
 			await this.deps.clearTaskSettings()
 			let abortFailure: unknown
