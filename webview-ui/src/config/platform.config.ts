@@ -40,7 +40,10 @@ type PlatformConfigJson = {
 
 type PlatformConfigs = Record<string, PlatformConfigJson>
 
-export type DiracSurface = "sidebar" | "tab"
+// Dirac EXT: "fleet" is the Fleet Map panel (WP5b). It hosts this same bundle, but renders the
+// fleet view instead of the chat — so every consumer that assumes "a surface has a conversation in
+// it" must check for it rather than assuming sidebar-or-tab.
+export type DiracSurface = "sidebar" | "tab" | "fleet"
 
 // Runtime configuration injected into the webview HTML by the host (see
 // DiracWebviewProvider.getHtmlContent). This lets host-specific user settings

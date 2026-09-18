@@ -1,12 +1,12 @@
-// The chat view's top strip: the Agent Map button on every surface, plus — in an editor tab only —
-// a badge naming the surface and a button that opens another tab.
+// The chat view's top strip: the Agent Map and Fleet Map buttons on every surface, plus — in an
+// editor tab only — a badge naming the surface and a button that opens another tab.
 //
 // The tab-only half exists because with several views open a user cannot otherwise tell which one
 // they are looking at; the sidebar is where Dirac has always lived and needs no label. The Agent Map
 // button is on both surfaces because the map is about the conversation, not about where it is shown,
 // and a control that only exists in one surface is a control people do not find.
 import { EmptyRequest } from "@shared/proto/dirac/common"
-import { NetworkIcon, PlusIcon } from "lucide-react"
+import { LayersIcon, NetworkIcon, PlusIcon } from "lucide-react"
 import type React from "react"
 import { getInstanceId, getSurface } from "@/config/platform.config"
 import { UiServiceClient } from "@/shared/api/grpc-client"
@@ -41,6 +41,26 @@ export const SurfaceStrip: React.FC<SurfaceStripProps> = ({ onOpenAgentMap }) =>
 						size="icon"
 						variant="icon">
 						<NetworkIcon className="stroke-1" size={16} />
+					</Button>
+				</TooltipTrigger>
+			</Tooltip>
+			<Tooltip>
+				{/* On every surface, like the Agent Map button: the fleet is about the other views,
+				    and a control that exists only in a tab is a control people do not find. */}
+				<TooltipContent side="bottom">Fleet map — every Dirac EXT view</TooltipContent>
+				<TooltipTrigger asChild>
+					<Button
+						aria-label="Fleet map"
+						className="p-0 h-7"
+						data-testid="fleet-map-open"
+						onClick={() =>
+							UiServiceClient.openFleetMap(EmptyRequest.create({})).catch((error) =>
+								console.error("Failed to open the Dirac EXT fleet map:", error),
+							)
+						}
+						size="icon"
+						variant="icon">
+						<LayersIcon className="stroke-1" size={16} />
 					</Button>
 				</TooltipTrigger>
 			</Tooltip>

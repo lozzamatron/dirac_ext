@@ -125,6 +125,18 @@ export abstract class DiracWebviewProvider {
 	abstract isVisible(): boolean
 
 	/**
+	 * Whether this instance's task is running without any surface attached to it.
+	 *
+	 * Dirac EXT: a VS Code tab whose panel was closed mid-turn keeps its controller alive and detached
+	 * (WP2), and the fleet map has to say so — a detached instance has no window to reveal, only one to
+	 * re-attach. A host with no detach concept is simply never detached, so this defaults to false
+	 * rather than being abstract: core code can ask every instance without knowing which host it is on.
+	 */
+	public isDetached(): boolean {
+		return false
+	}
+
+	/**
 	 * Returns host-specific runtime configuration to inject into the webview.
 	 *
 	 * This is the seam through which a host (e.g. VSCode) can forward user

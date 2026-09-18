@@ -142,6 +142,15 @@ export class FileServiceClient extends ProtoBusClient {
 		return this.makeUnaryRequest("deleteSkillFile", request, proto.dirac.DeleteSkillRequest.toJSON, proto.dirac.SkillsToggles.fromJSON)
 	}
 }
+export class FleetServiceClient extends ProtoBusClient {
+	static override serviceName: string = "dirac.FleetService"
+	static subscribeToFleet(request: proto.dirac.EmptyRequest, callbacks: Callbacks<proto.dirac.FleetSnapshotResponse>): ()=>void {
+		return this.makeStreamingRequest("subscribeToFleet", request, proto.dirac.EmptyRequest.toJSON, proto.dirac.FleetSnapshotResponse.fromJSON, callbacks)
+	}
+	static async revealInstance(request: proto.dirac.StringRequest): Promise<proto.dirac.Boolean> {
+		return this.makeUnaryRequest("revealInstance", request, proto.dirac.StringRequest.toJSON, proto.dirac.Boolean.fromJSON)
+	}
+}
 export class GoalServiceClient extends ProtoBusClient {
 	static override serviceName: string = "dirac.GoalService"
 	static async selectGoal(request: proto.dirac.GoalControlRequest): Promise<proto.dirac.Empty> {
@@ -425,6 +434,9 @@ export class UiServiceClient extends ProtoBusClient {
 	}
 	static async openInNewTab(request: proto.dirac.EmptyRequest): Promise<proto.dirac.Empty> {
 		return this.makeUnaryRequest("openInNewTab", request, proto.dirac.EmptyRequest.toJSON, proto.dirac.Empty.fromJSON)
+	}
+	static async openFleetMap(request: proto.dirac.EmptyRequest): Promise<proto.dirac.Empty> {
+		return this.makeUnaryRequest("openFleetMap", request, proto.dirac.EmptyRequest.toJSON, proto.dirac.Empty.fromJSON)
 	}
 }
 export class WebServiceClient extends ProtoBusClient {
