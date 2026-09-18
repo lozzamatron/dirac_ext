@@ -54,6 +54,8 @@ import { telemetryService } from "./services/telemetry"
 import { SharedUriHandler, TASK_URI_PATH } from "./services/uri/SharedUriHandler"
 import { ShowMessageType } from "./shared/proto/host/window"
 import { openTasks } from "@core/task/OpenTaskRegistry"
+import { setFleetMapOpener } from "@core/webview/fleetMapOpener"
+import { setInstanceRevealer } from "@core/webview/instanceRevealer"
 import { setTabOpener } from "@core/webview/tabOpener"
 import { TaskStatus } from "@shared/ExtensionMessage"
 
@@ -749,6 +751,77 @@ ${ctx.cellJson || "{}"}
 	// Dirac EXT: the webview's "new tab" button reaches the host through the openInNewTab RPC, and the
 	// core handler must not know about vscode — so supply the implementation here, the way the task
 	// conflict handler above is supplied, and clear it on deactivation.
+	// Dirac EXT (WP5b): the Fleet Map panel. It hosts the SAME webview bundle as a chat surface —
+	// window.__DIRAC_CONFIG__.surface is "fleet", and the webview renders the fleet view instead of
+	// the chat — so every piece of plumbing the panel needs (the gRPC transport, the theme, the
+	// lifecycle) is the plumbing that already works. The cost is a controller it never uses, which is
+	// why the instance registry refuses to treat a fleet instance as a command target.
+	//
+	// A SINGLETON: opening it again reveals the existing panel. Two fleet maps would each subscribe
+	// to the same stream and show the same thing, and neither would be the one the button meant.
+	let fleetPanel: vscode.WebviewPanel | undefined
+	const openFleetMapPanel = async (): Promise<void> => {
+		if (fleetPanel) {
+			fleetPanel.reveal(undefined, false)
+			return
+		}
+		const provider = HostProvider.get().createDiracWebviewProvider("fleet") as VscodeDiracWebviewProvider
+		const panel = vscode.window.createWebviewPanel("dirac-ext.fleetMap", "Dirac EXT Fleet", vscode.ViewColumn.Active, {
+			retainContextWhenHidden: true,
+			enableScripts: true,
+			localResourceRoots: [vscode.Uri.file(HostProvider.get().extensionFsPath)],
+		})
+		panel.iconPath = vscode.Uri.joinPath(
+			vscode.Uri.file(HostProvider.get().extensionFsPath),
+			"assets",
+			"icons",
+			"icon-ext.svg",
+		)
+		// Closing the fleet map never detaches anything: it owns no task, and its controller exists
+		// only because the webview bundle expects one.
+		provider.setPanelCloseHandler(() => "dispose")
+		fleetPanel = panel
+		panel.onDidDispose(() => {
+			fleetPanel = undefined
+		})
+		await provider.resolveSurface(panel)
+	}
+
+	setFleetMapOpener(openFleetMapPanel)
+	context.subscriptions.push({ dispose: () => setFleetMapOpener(undefined) })
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand("dirac-ext.openFleetMap", async () => {
+			await openFleetMapPanel()
+		}),
+	)
+
+	// Dirac EXT (WP5b): "Reveal" on a fleet card. A detached instance has no window to reveal, only
+	// one to re-attach — so revealing it re-attaches it into a tab, which is what the user meant by
+	// clicking the card of a task that is still running.
+	setInstanceRevealer(async (instanceId: string) => {
+		const instance = DiracWebviewProvider.getInstanceByControllerId(instanceId) as
+			| VscodeDiracWebviewProvider
+			| undefined
+		if (!instance) {
+			// Ordinary, not an error: the instance closed between the snapshot and the click. The
+			// next snapshot (<=750ms) drops its card.
+			return false
+		}
+		if (instance.isDetached()) {
+			await openDiracTab(context, {
+				provider: instance,
+				preserveTask: true,
+				title: instance.getTitle() ?? "Dirac EXT",
+			})
+			updateBackgroundTaskStatus()
+			return true
+		}
+		instance.reveal()
+		return true
+	})
+	context.subscriptions.push({ dispose: () => setInstanceRevealer(undefined) })
+
 	setTabOpener(async () => {
 		await openDiracTab(context)
 		updateBackgroundTaskStatus()

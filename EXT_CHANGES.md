@@ -440,6 +440,107 @@ one small JSON file, and the alternative is a dependency or hand-rolled chunking
 problem) and a timeout around `ensureTaskDirectoryExists` (speculative).
 
 
+## WP5b — the Fleet map
+
+One panel showing every live Dirac EXT instance and its agent tree, live. The per-task Agent Map answers
+"what is THIS conversation doing"; the fleet answers "what are all of them doing", which is the question
+neither Claude Code nor Kilo can answer at all.
+
+### The one design decision everything else follows
+
+**The fleet map is a THIRD SURFACE, not a second bundle.** `WebviewSurface` / `DiracSurface` gain
+`"fleet"`; a fleet panel is an ordinary `DiracWebviewProvider` hosting the same webview bundle, and
+`App.tsx` renders `FleetMapView` instead of `ChatView` when `getSurface() === "fleet"`. Every piece of
+plumbing it needs — WP1's routed subscriptions, WP2's panel lifecycle, WP3's opener pattern, the gRPC
+transport, the theme — already exists and is verified.
+
+The price is a controller the panel never uses, and that price is paid in `InstanceRegistry`: `markActive`
+ignores a fleet instance, and `visible()` / `lastActiveInstance()` (and therefore `controllerIdForTask`'s
+fallback) skip it at **every** fallback step. Without that, "Add to Dirac" from the editor routes into a
+panel with no chat in it and the text simply disappears. `nonFleet()` is what the fleet itself iterates, so
+the panel never appears in its own listing.
+
+### Files
+
+- `proto/dirac/fleet.proto` — `FleetService.subscribeToFleet` (server-streaming) + `revealInstance`.
+  `UiService.openFleetMap` sits beside `openInNewTab`, because that is where "ask the host to open a
+  surface" already lives; fleet-ENTITY operations live on `FleetService`.
+- `src/shared/fleet.ts` — `FleetInstance` / `FleetSnapshot`, and `FLEET_STATUS_BY_TASK_STATUS`, an
+  exhaustive `Record<TaskStatus, FleetInstanceStatus>`. `FleetInstanceStatus` deliberately has **no
+  `"failed"`**: `TaskStatus` has no failed state, and a status that cannot occur is a lie drawn as a dot.
+- `src/core/controller/agentMap/buildAgentMapSnapshot.ts` — the disk assembly, **moved out of**
+  `getAgentMap.ts`, which is now a thin RPC wrapper. Two readers of the same records that each carry
+  their own copy of the assembly will drift, and the fleet would quietly disagree with the overlay about
+  the same conversation.
+- `src/core/controller/fleet/{buildFleetSnapshot,subscribeToFleet,revealInstance}.ts`
+- `src/core/webview/{fleetMapOpener,instanceRevealer}.ts` — the host indirections, same shape as
+  `tabOpener.ts`; `extension.ts` supplies the VS Code implementations and clears them on deactivation.
+- `webview-ui/src/features/fleet-map/{useFleetSnapshot,buildFleetSections,FleetMapView}.tsx`
+- `DiracWebviewProvider.isDetached()` gained a `false` default so core code can ask any instance without
+  knowing which host it is on.
+
+### Push cadence
+
+`subscribeToFleet` keeps ONE global handler set — every fleet panel sees the same fleet, so there is
+nothing to key by. A rebuild is triggered by: a subscriber attaching; `webviewInstances.onDidChange`
+(register/unregister, new in WP5b); `notifyFleetChanged()` called from `sendStateUpdate` beside the
+existing `applyStateTitle`; and a 5s safety interval. **The interval is not decoration** — subagent
+progress reaches `runs.json` with no state publication at all, so without it a running tree freezes on
+screen. All four coalesce through a 750ms trailing throttle, and a rebuild in flight sets a dirty flag
+rather than starting a second one. The registry listener and the interval are attached when the first
+subscriber arrives and torn down when the last leaves; an interval that outlives its subscribers rebuilds
+forever against nobody.
+
+### Reveal
+
+`revealInstance` resolves `false` for an instance that is simply gone — ordinary, not an error: it closed
+between the snapshot and the click, and the next snapshot drops its card. A **detached** instance has no
+window to reveal, only one to re-attach, so the host implementation re-attaches it through WP2's existing
+`openDiracTab({ provider, preserveTask: true })` path.
+
+### What the browser found that nothing else did
+
+- 🔴 **A layout that the tests, the types and the screenshot all passed, and the ruler failed.** The root
+  card sat in its own grid row with its children cascading diagonally below, so every parent's card ended
+  **8px above** the elbow meant to reach it and the connector joined nothing. The Agent Map overlay had
+  the answer all along: a node SHARES its first row with its first child and spans down over the rest.
+  `FleetSectionRow` gained `subtreeSize` / `hasChildren`, and the layout became a real tidy-tree pass.
+  Measured, not eyeballed: `boundingBox` on the root, the elbow and the child, asserting the three share
+  a row to the pixel.
+- 🔴 **An assertion loose enough to pass on the defect it was written for is worth no more than none.**
+  The first version asserted `elbow.y + elbow.h > rootCell.y` — true with the whole card sitting above
+  the elbow. The invariant that actually means "the line reaches the card" is that the root's box COVERS
+  the elbow's row and their centres agree within a pixel. First fix narrowed the gap 8px → 4px and still
+  passed; only the tightened assertion caught that.
+- **Every idle card read "Dirac EXT".** `getTitle()` does not return `undefined` for an untouched
+  instance — `applyStateTitle` has already written the placeholder — so an `?? fallback` never fires.
+  The fleet tests for `DEFAULT_WEBVIEW_TITLE` explicitly and labels those cards
+  `New conversation (<first 8 of the controller id>)`. Telling instances apart is the entire point of
+  listing them.
+- **Every root node read as a raw timestamp.** On disk an ordinary conversation has no title, so
+  `buildAgentMapSnapshot` falls back to the task id. Under the overlay that is tolerable; on a fleet card
+  it is a bare number directly beneath a perfectly good human title. The fleet supplies the better name
+  it already has rather than teaching the shared builder about surfaces.
+
+### Acceptance
+
+`tools/wp5b-acceptance.mjs` — **36 assertions, 0 failures** (`verification/wp5b/`), including the measured
+tree geometry. Unit tests: `buildFleetSections` 21 cases, and a mutation check (invert the detached sort
+rank; delete the recursive walk) confirmed the suite goes red on both before being trusted. Fork unit
+tests 36 passing; webview map tests 53 passing; full upstream suite 2435 passing / 75 failing with the
+failing-name set **identical to the pristine baseline**.
+
+⚠️ **`npx vitest` silently produces no output under its default parallel worker pool in this container**
+— exit 1, banner only, no test results, and it does this to test files that passed minutes earlier. Run
+webview tests with `--no-file-parallelism`. This is the runner, not the tests.
+
+### Deliberately not built
+History (the fleet is LIVE instances only), cross-window fleets, and any control that starts, steers,
+aborts or sends input to another instance. It is a map, not a remote control; Reveal is navigation.
+There is also **no default keybinding** — WP4 took `Ctrl/Cmd+Shift+M`, and the free combinations near it
+collide with VS Code's own find/replace bindings.
+
+
 ## Build-host facts (not fork changes — they bite every WP)
 
 - **`npm run package` needs `unzip`, which this container does not have.** `scripts/prepare-extension-ripgrep-binaries.mjs`

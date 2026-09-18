@@ -4,6 +4,7 @@ import { telemetryService } from "@/services/telemetry"
 import { ExtensionState } from "@/shared/ExtensionMessage"
 import type { PresentationBatch } from "@/shared/PresentationOperation"
 import { Logger } from "@/shared/services/Logger"
+import { notifyFleetChanged } from "@core/controller/fleet/subscribeToFleet"
 import { applyStateTitle } from "@core/webview/taskTitle"
 import { getRequestRegistry, StreamingResponseHandler } from "../grpc-handler"
 import { Controller } from "../index"
@@ -69,6 +70,11 @@ export async function sendStateUpdate(
 	// Dirac EXT: before the early return below — a detached or not-yet-subscribed surface still has a
 	// title worth keeping current, and it is what the re-attach quick pick labels the task with.
 	applyStateTitle(controllerId, state)
+
+	// Dirac EXT: a state publication is the natural "something changed in this conversation" signal,
+	// so it is what keeps the Fleet Map current. A no-op when no fleet panel is subscribed, and
+	// coalesced through the fleet's own throttle when one is — this runs on every publication.
+	notifyFleetChanged()
 
 	const subscriptions = activeStateSubscriptions.get(controllerId)
 	if (!subscriptions || subscriptions.size === 0) {

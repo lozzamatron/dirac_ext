@@ -373,4 +373,9 @@ service UiService {
 
   // Dirac EXT: opens a new, empty Dirac EXT conversation in an editor tab
   rpc openInNewTab(EmptyRequest) returns (Empty);
+
+  // Dirac EXT: opens (or reveals) the single Fleet Map panel. Lives here beside openInNewTab
+  // because this is where "ask the host to open a surface" already lives; FleetService carries the
+  // operations on fleet ENTITIES instead.
+  rpc openFleetMap(EmptyRequest) returns (Empty);
 }

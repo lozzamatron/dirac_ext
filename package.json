@@ -161,6 +161,12 @@
                 "category": "Dirac EXT"
             },
             {
+                "command": "dirac-ext.openFleetMap",
+                "title": "Open Fleet Map",
+                "category": "Dirac EXT",
+                "icon": "$(layers)"
+            },
+            {
                 "command": "dirac-ext.plusButtonClicked",
                 "title": "New Task",
                 "icon": "$(add)"

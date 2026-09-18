@@ -116,7 +116,7 @@ export class VscodeDiracWebviewProvider extends DiracWebviewProvider implements 
 	}
 
 	/** Returns true when this instance is detached from its panel but still alive. */
-	public isDetached(): boolean {
+	public override isDetached(): boolean {
 		return this.detached
 	}
 

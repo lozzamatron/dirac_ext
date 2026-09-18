@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package dirac;
+
+import "dirac/common.proto";
+
+option go_package = "github.com/dirac/grpc-go/dirac";
+option java_multiple_files = true;
+option java_package = "bot.dirac.proto";
+
+// Dirac EXT: the Fleet Map, one panel showing every live Dirac EXT instance.
+//
+// The sidebar, every editor tab and every detached background task appears here with its own agent
+// tree, updating live. This is the picture no single webview can draw of itself: each instance only
+// knows its own conversation, so the fleet has to be assembled on the extension host, where the
+// instance registry lives.
+service FleetService {
+  // Streams a whole FleetSnapshot on every change.
+  //
+  // Not keyed by controller: every fleet panel sees the same fleet, so there is nothing to key by.
+  // A per-controller subscription would also make the singleton panel's second open either a second
+  // stream or a no-op with no way to tell which — one global stream makes both questions moot.
+  rpc subscribeToFleet(EmptyRequest) returns (stream FleetSnapshotResponse);
+  // Brings an instance to the front. Re-attaches it first if it is detached.
+  rpc revealInstance(StringRequest) returns (Boolean);
+}
+
+message FleetSnapshotResponse {
+  // A FleetSnapshot (src/shared/fleet.ts) as JSON.
+  //
+  // Carried as JSON for the same reason AgentMapSnapshotResponse carries snapshot_json: the shape is
+  // defined once in TypeScript and shared by both sides, and mirroring it here would leave two
+  // definitions to keep in step — with the proto one silently winning on the wire.
+  string snapshot_json = 1;
+}

@@ -1,7 +1,9 @@
 import type { Boolean, EmptyRequest } from "@shared/proto/dirac/common"
 import { useCallback, useEffect, useState } from "react"
+import { getSurface } from "@/config/platform.config"
 import { useAppStore } from "@/app/store/appStore"
 import ChatView from "@/features/chat/components/ChatView/ChatView"
+import { FleetMapView } from "@/features/fleet-map/FleetMapView"
 import { useBannerAction } from "@/features/banners/hooks/useBannerAction"
 import HistoryView from "@/features/history/components/HistoryView/HistoryView"
 import SettingsView from "@/features/settings/components/SettingsView/SettingsView"
@@ -69,6 +71,14 @@ const AppContent = () => {
 				console.error("Failed to acknowledge release notes:", error)
 			})
 	}, [remoteNotes, setShouldShowAnnouncement])
+
+	// Dirac EXT (WP5b): the fleet panel hosts this same bundle but has no conversation of its own —
+	// it renders the fleet instead of the chat. Branched BEFORE the hydration gate on purpose: the
+	// fleet's data comes from its own stream, not from this controller's state, so waiting on a
+	// hydration that carries nothing it needs would leave the panel blank for no reason.
+	if (getSurface() === "fleet") {
+		return <FleetMapView />
+	}
 
 	if (!didHydrateState) {
 		return null

@@ -1,0 +1,54 @@
+workbench: Agent Manager - dirac_ext - code-server  (2026-09-18T02:00:52.293Z)
+PASS: a first tab opened
+PASS: a second tab opened with its own controller id
+PASS: the second tab accepted a long-running subagent prompt
+PASS: the busy tab's webview is resolvable
+PASS: the strip button opened a fleet surface
+PASS: the fleet surface reports itself as "fleet" (got "fleet")
+PASS: the fleet panel has no chat input in it (found 0)
+fleet header: "Fleet — 3 instances · 1 agent Every live Dirac EXT view and the agents running in it."
+PASS: it names how many instances it is showing
+fleet cards: [{"instanceId":"01M2S3X3MWTBPT9SB9FRDZXP4W","title":"New conversation (01M2S3X3)","surface":"Sidebar","detached":false,"status":"idle","nodes":[],"rootNodes":[]},{"instanceId":"01M2S3XHE3TZMXP9ESYXXW59AS","title":"New conversation (01M2S3XH)","surface":"Tab","detached":false,"status":"idle","nodes":[],"rootNodes":[]},{"instanceId":"01M2S3XVB6SESYCP39Q4ZHZCF8","title":"WP5BSUB-MU6BAP8L: use the…","surface":"Tab","detached":false,"status":"running","nodes":["Count 1 to 3000"],"rootNodes":["WP5BSUB-MU6BAP8L: use the…"]}]
+PASS: it lists the sidebar and both tabs (got 3)
+PASS: the fleet panel does NOT appear in its own listing
+PASS: the sidebar is listed as Sidebar
+PASS: both tabs are listed as Tab
+card titles: ["New conversation (01M2S3X3)","New conversation (01M2S3XH)","WP5BSUB-MU6BAP8L: use the…"]
+PASS: every card carries a distinct label (got ["New conversation (01M2S3X3)","New conversation (01M2S3XH)","WP5BSUB-MU6BAP8L: use the…"])
+busy card: {"instanceId":"01M2S3XVB6SESYCP39Q4ZHZCF8","title":"WP5BSUB-MU6BAP8L: use the…","surface":"Tab","detached":false,"status":"running","nodes":["Count 1 to 3000"],"rootNodes":["WP5BSUB-MU6BAP8L: use the…"]}
+idle card: {"instanceId":"01M2S3XHE3TZMXP9ESYXXW59AS","title":"New conversation (01M2S3XH)","surface":"Tab","detached":false,"status":"idle","nodes":[],"rootNodes":[]}
+PASS: the instance running a task reads running (got "running")
+PASS: an untouched tab does not read running (got "idle")
+busy instance nodes: ["Count 1 to 3000"] roots: ["WP5BSUB-MU6BAP8L: use the…"]
+PASS: its section contains at least one agent node (got 1)
+PASS: each node names its own job rather than repeating the card header
+PASS: the section has exactly one root node (got 1)
+PASS: the root node is named, not a raw task id (got ["WP5BSUB-MU6BAP8L: use the…"])
+tree geometry: [{"column":"1","row":"1","x":33,"y":386,"w":269,"h":60,"isCard":true,"label":"WP5BSUB-MU6BAP8L: use the…"},{"column":"2","row":"1","x":302,"y":386,"w":40,"h":60,"isCard":false,"label":""},{"column":"3","row":"1","x":342,"y":386,"w":269,"h":60,"isCard":true,"label":"Count 1 to 3000"}]
+PASS: the tree drew a root and at least one child cell (got 2)
+PASS: no card was squeezed into the 40px connector column (widths [269,269])
+PASS: each connector occupies its own 40px column (widths [40])
+root={"column":"1","row":"1","x":33,"y":386,"w":269,"h":60,"isCard":true,"label":"WP5BSUB-MU6BAP8L: use the…"} elbow={"column":"2","row":"1","x":302,"y":386,"w":40,"h":60,"isCard":false,"label":""} child={"column":"3","row":"1","x":342,"y":386,"w":269,"h":60,"isCard":true,"label":"Count 1 to 3000"}
+PASS: the elbow sits in the gap between the root and its child, touching neither's box
+PASS: the root's card spans its child's row rather than ending above it (root 386..446, elbow 386..446)
+PASS: the root's stub and the elbow meet on the same line (root centre 416, elbow centre 416)
+fleet surfaces after a second open: 1 (["01M2S3YFZ0ZXPPY30SCVRKR0WQ"])
+PASS: opening it twice yields ONE panel (got 1)
+PASS: and it is the SAME panel, revealed rather than re-created
+front tab before reveal: undefined
+reveal button at rest: {"border":"1px","bg":"rgb(32, 32, 32)"}
+PASS: the Reveal control looks clickable at rest, not only on hover
+front tab after reveal: 01M2S3XHE3TZMXP9ESYXXW59AS (asked for 01M2S3XHE3TZMXP9ESYXXW59AS)
+PASS: Reveal brought the requested tab to the front
+closing the front tab: 01M2S3XHE3TZMXP9ESYXXW59AS
+cards after close: ["01M2S3X3MWTBPT9SB9FRDZXP4W","01M2S3XVB6SESYCP39Q4ZHZCF8"]
+PASS: closing a tab removes its section from the fleet, live
+PASS: ...and the fleet panel itself was never reloaded to do it
+PASS: a third tab accepted a long-running prompt
+detached card: {"instanceId":"01M2S3Z565J95TN55S83XN9BGZ","title":"WP5BDET-MU6BAP8L: count from 1 to…","surface":"Tab","detached":true,"status":"running","nodes":[],"rootNodes":["WP5BDET-MU6BAP8L: count from 1 to…"]}
+PASS: a detached background task still appears in the fleet
+PASS: ...carrying the Detached chip
+front tab after revealing the detached instance: 01M2S3Z565J95TN55S83XN9BGZ
+PASS: Reveal re-attached the detached task into a tab
+PASS: ...and the fleet stopped calling it detached
+RESULT: 0 failing assertion(s)
