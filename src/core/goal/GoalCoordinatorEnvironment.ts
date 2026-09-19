@@ -42,6 +42,7 @@ class GoalCoordinatorToolEnvironment implements ToolExecutionEnvironment {
 	readonly sourceAst
 	readonly anchors
 	readonly diagnostics
+	readonly callGraph
 	readonly editor
 	readonly browser
 	readonly skills
@@ -65,6 +66,7 @@ class GoalCoordinatorToolEnvironment implements ToolExecutionEnvironment {
 		this.sourceAst = base.sourceAst
 		this.anchors = base.anchors
 		this.diagnostics = base.diagnostics
+		this.callGraph = base.callGraph
 		this.editor = base.editor
 		this.browser = base.browser
 		this.skills = base.skills

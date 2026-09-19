@@ -14,6 +14,7 @@ const SOURCE_PRIORITY: Record<ToolSource, number> = { builtin: 0, global: 1, wor
 
 const TOOL_OPERATION_SCOPES: Readonly<Record<string, readonly string[]>> = {
 	inspect_ast: ["outline", "implementation", "definitions", "references", "occurrences"],
+	call_graph: ["callers", "callees", "impact"],
 	edit_ast: ["rename", "replace"],
 	[RESPOND_TOOL_NAME]: RESPONSE_OPERATIONS,
 }

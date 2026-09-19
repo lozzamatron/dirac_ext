@@ -56,6 +56,7 @@ export enum DiracDefaultTool {
 	LIST_SKILLS = "list_skills",
 	USE_SUBAGENTS = "use_subagents",
 	INSPECT_AST = "inspect_ast",
+	CALL_GRAPH = "call_graph",
 
 	UPSERT_TOOL = "upsert_tool",
 

@@ -336,6 +336,18 @@ class ACPWorkspaceServiceClient implements WorkspaceServiceClientInterface {
 		return proto.host.GetDiagnosticsResponse.create({ fileDiagnostics: [] })
 	}
 
+	async getCallHierarchy(_request: proto.host.GetCallHierarchyRequest): Promise<proto.host.GetCallHierarchyResponse> {
+		// Dirac EXT (WP7): ACP has no call-hierarchy extension request, so there is no language server
+		// to ask. Report that plainly — an empty node list would read as "this symbol has no callers",
+		// which is a finding, not an absence of one.
+		Logger.debug("[ACPWorkspaceServiceClient] getCallHierarchy called (stub)")
+		return proto.host.GetCallHierarchyResponse.create({
+			resolved: false,
+			unresolvedReason: "Call hierarchy is unavailable over ACP: no language server is reachable from this host.",
+			nodes: [],
+		})
+	}
+
 	async openProblemsPanel(_request: proto.host.OpenProblemsPanelRequest): Promise<proto.host.OpenProblemsPanelResponse> {
 		// Next phase: Send ACP extension notification to open the problems panel.
 		// This would show the diagnostics/problems view in the editor.

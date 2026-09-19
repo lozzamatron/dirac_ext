@@ -41,6 +41,10 @@ service WorkspaceService {
 
   // Prepares diagnostics for the given files (e.g. by loading them into memory).
   rpc prepareDiagnostics(PrepareDiagnosticsRequest) returns (PrepareDiagnosticsResponse);
+
+  // Dirac EXT (WP7): resolves a symbol and walks its call hierarchy through the host's live language
+  // server. Dirac's own inspect_ast is tree-sitter — it can find a definition, but never a CALLER.
+  rpc getCallHierarchy(GetCallHierarchyRequest) returns (GetCallHierarchyResponse);
 }
 
 message GetWorkspacePathsRequest {
@@ -131,4 +135,27 @@ message PrepareDiagnosticsRequest {
 
 message PrepareDiagnosticsResponse {
   bool success = 1;
+}
+
+message GetCallHierarchyRequest {
+  string symbol = 1;
+  optional string file_path = 2; // disambiguates when the name exists in several files
+  string direction = 3; // "callers" | "callees" | "impact"
+  optional int32 depth = 4; // impact only: transitive levels, default 2, clamped to 5
+}
+
+message CallHierarchyNode {
+  string name = 1;
+  string detail = 2; // the language server's own qualifier, often the containing type
+  string uri = 3;
+  int32 line = 4; // 1-based, for display
+  string kind = 5; // "function", "method", …
+  int32 depth = 6; // 0 = the resolved symbol itself
+  int32 parent_index = 7; // index into nodes; -1 for the root
+}
+
+message GetCallHierarchyResponse {
+  bool resolved = 1; // false when the symbol could not be located
+  string unresolved_reason = 2; // plain text for the model; empty when resolved
+  repeated CallHierarchyNode nodes = 3;
 }
