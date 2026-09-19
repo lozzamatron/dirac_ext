@@ -1,5 +1,25 @@
 # Dirac, an Open-source AI coding agent for efficiently doing complex work 
 
+> ## This is **Dirac EXT**, a fork of [dirac-run/dirac](https://github.com/dirac-run/dirac)
+>
+> Forked at `041fce18` (v0.5.13). It installs side by side with upstream Dirac under its own identity
+> (`lozza.dirac-ext`), shares the same `~/.dirac/data`, and adds four things:
+>
+> | | What it adds | Where to read more |
+> |---|---|---|
+> | **Editor tabs** | Several conversations at once in one window, each an independent instance. A tab is titled after its conversation; closing one mid-turn detaches the task instead of killing it, and it can be re-attached later. | [Surfaces](#surfaces-the-sidebar-and-editor-tabs), below |
+> | **Agent Map** | A per-conversation overlay (`Ctrl/Cmd+Shift+M`) showing the conversation as a root node with every subagent and Goal child task branching off it, plus a detail drawer. Reads on-disk records too, so it can show a child task's *own* subagents — which the transcript structurally cannot contain. | `EXT_CHANGES.md` § WP4, § WP5 |
+> | **Fleet Map** | One panel showing **every live instance** — sidebar, every tab, and detached background tasks — each with its own agent tree, streamed live. "Reveal" navigates to an instance, re-attaching it first if it is detached. | `EXT_CHANGES.md` § WP5b |
+> | **`call_graph`** | A tool answering *who calls this* / *what breaks if I change this*, from the host's **live language server**. Upstream's `inspect_ast` is tree-sitter: it can find a definition, but never a caller. | `EXT_CHANGES.md` § WP7 |
+>
+> **[`EXT_CHANGES.md`](EXT_CHANGES.md) is the rebase ledger** — every upstream file this fork touches,
+> why, and what to re-check when rebasing. It also records what was deliberately *not* built, and the
+> bugs the browser found that the type checker and unit tests did not.
+>
+> Every work package was driven in a real browser against a real build, not just unit-tested. The
+> assertions, logs and screenshots are committed under [`verification/`](verification/).
+
+
 Dirac is built for long-running software-engineering work, precise codebase changes, and efficient model use.
 
 ## What is Dirac?
