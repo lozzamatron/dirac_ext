@@ -541,6 +541,76 @@ There is also **no default keybinding** — WP4 took `Ctrl/Cmd+Shift+M`, and the
 collide with VS Code's own find/replace bindings.
 
 
+## WP7 — `call_graph`, built natively on VS Code's call hierarchy
+
+Dirac could find a *definition* (`inspect_ast`, tree-sitter) but never a **caller**. `call_graph`
+answers "who calls this" and "what breaks if I change this" from the host's live language server.
+
+### Why it does NOT wrap TokenSlayer
+
+The plan scoped WP7 as a wrapper over `tokenslayer-call-graph`. A probe (since removed) established
+that the wrapper had nothing to wrap: **TokenSlayer v1.5.0 cannot resolve a TypeScript symbol at
+all.** Its `resolveSymbol` prepares the call hierarchy at the workspace symbol's
+`location.range.start` — the start of the DECLARATION. Measured on `buildFleetSnapshot`:
+
+| Position | `vscode.prepareCallHierarchy` returns |
+|---|---|
+| `location.range.start` (what TokenSlayer uses) | **0** |
+| the identifier's column on that same line | **1**, then `provideIncomingCalls` → **1** |
+
+(Its exact-match filter is dead too: TypeScript reports the name as `"buildFleetSnapshot()"`, with
+parentheses, so `s.name === symbol` never matches.) The owner chose to call VS Code directly, which
+also drops a dependency on another extension being installed **and enabled** — and enablement in
+code-server is per browser profile, so it can vanish for one person and nobody else.
+
+✅ Separately confirmed by the same probe: **`vscode.lm.invokeTool` DOES work cross-extension on
+code-server 1.131** from a non-chat extension (31 tools visible, invocation reaches the other
+extension's handler). The plan's §5 risk is closed — we simply no longer need it.
+
+### Shape
+
+- `proto/host/workspace.proto` — `getCallHierarchy`, on the host bridge beside `getDiagnostics`,
+  because only the host has a language server.
+- `src/hosts/vscode/hostbridge/workspace/getCallHierarchy.ts` — resolve the symbol, **find the
+  identifier's column** (the whole fix), prepare, then walk incoming/outgoing calls. `impact` is a
+  breadth-first transitive walk, depth clamped 1–5, with a visited set claimed before descending
+  (recursion is ordinary) and a 500-node cap that REPORTS when it trims — a partial graph returned as
+  whole is a wrong answer, not a small one.
+- `src/core/task/tools/interfaces/CallGraph.ts` + `adapters/traits/CallGraphTraitBuilder.ts` — the
+  trait, thin over `HostProvider.workspace.getCallHierarchy`.
+- `src/core/task/tools/modules/call_graph/` — the tool. Registered in `builtin-tools.ts`,
+  `DiracDefaultTool.CALL_GRAPH`, and `TOOL_OPERATION_SCOPES` so one operation can be authorised
+  without the others. **IDE surfaces only.**
+- CLI and ACP hosts implement the RPC by saying they have no language server, rather than returning an
+  empty node list.
+
+### The distinction the whole tool is built around
+
+`resolved` and `empty` are **two separate booleans**, and three outcomes render as three different
+texts: *could not resolve* (and why), *the language server reports no callers* (a finding), and the
+tree. Collapsing the first two is how an agent concludes a function is dead when nobody looked. Two
+unit tests assert the absence of each phrase from the other's output, and a mutation check — making
+the unresolved branch emit the "no callers" sentence — was confirmed to turn both red before the
+suite was trusted.
+
+### Deliberately not built
+A TokenSlayer `skeleton` operation inside the fork. Role (a) says keep Dirac's own read/inspect path,
+and `inspect_ast` already covers outlines; a second skeleton path would duplicate it and compete with
+hash-anchored editing. TokenSlayer serves that need in Claude Code and Kilo instead (WP6).
+
+### Acceptance
+`tools/wp7-acceptance.mjs` — **10 assertions, 0 failures** (`verification/wp7/`): impact and callers
+name the real caller and cite a real file; callees works; a nonexistent symbol reports *unresolved*;
+and a symbol that resolves with zero callers reports *no callers* in different words. Unit tests 11
+new (fork total 47). Full upstream suite 2446 passing / 75 failing, failing-name set **identical to
+the pristine baseline**.
+
+⚠️ The acceptance opens a TypeScript file and waits 25s first. A cold language server answers
+"unresolved" for everything, which would make the unresolved assertion pass for the wrong reason.
+⚠️ `activate` is the obvious symbol for the zero-caller case and is **wrong** — it has 3 in-code
+callers. `deactivate` is exported and called only by VS Code itself.
+
+
 ## Build-host facts (not fork changes — they bite every WP)
 
 - **`npm run package` needs `unzip`, which this container does not have.** `scripts/prepare-extension-ripgrep-binaries.mjs`

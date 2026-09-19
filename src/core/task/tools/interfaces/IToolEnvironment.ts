@@ -1,3 +1,5 @@
+export type { CallGraphDirection, CallGraphNode, CallGraphRequest, CallGraphResult, ICallGraphTrait } from "./CallGraph"
+import type { ICallGraphTrait } from "./CallGraph"
 import type { TextCondensationTemplateId } from "@core/text-condensation/TextCondenser"
 import type { TextFileWindow, TextFileWindowOptions } from "@shared/text-file-window"
 import type {
@@ -498,6 +500,9 @@ export interface IToolEnvironment {
 	readonly system: ISystemTrait
 	readonly workspace: IWorkspaceTrait
 	readonly sourceAst: ISourceAstTrait
+	/** Call hierarchy from the host's LIVE language server — callers, callees and transitive impact.
+	 *  sourceAst is tree-sitter: it can find a definition, but never a CALLER. */
+	readonly callGraph: ICallGraphTrait
 	readonly diagnostics: IDiagnosticsTrait
 
 	readonly anchors: IAnchorTrait

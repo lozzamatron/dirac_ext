@@ -105,6 +105,7 @@ class GoalChildToolEnvironment implements ToolExecutionEnvironment {
 	readonly workspace
 	readonly sourceAst
 	readonly diagnostics
+	readonly callGraph
 	readonly anchors
 	readonly editor
 	readonly browser
@@ -127,6 +128,7 @@ class GoalChildToolEnvironment implements ToolExecutionEnvironment {
 		this.workspace = base.workspace
 		this.sourceAst = base.sourceAst
 		this.diagnostics = base.diagnostics
+		this.callGraph = base.callGraph
 		this.anchors = base.anchors
 		this.editor = base.editor
 		this.browser = base.browser

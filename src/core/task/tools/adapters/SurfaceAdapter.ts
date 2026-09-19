@@ -22,6 +22,8 @@ import {
 import type { ToolExecutionEnvironment, ToolEnvironmentFactory } from "../interfaces/ToolEnvironmentFactory"
 import { TaskConfig } from "../types/TaskConfig"
 import { CardHandle } from "./CardHandle"
+import type { ICallGraphTrait } from "../interfaces/CallGraph"
+import { buildCallGraphTrait } from "./traits/CallGraphTraitBuilder"
 import { buildDiagnosticsTrait } from "./traits/DiagnosticsTraitBuilder"
 import { buildEditorTrait } from "./traits/EditorTraitBuilder"
 import { buildSourceAstTrait } from "./traits/SourceAstTraitBuilder"
@@ -56,6 +58,7 @@ export class SurfaceAdapter implements ToolExecutionEnvironment {
 	public readonly telemetry: ITelemetryTrait
 	public readonly workspace: IWorkspaceTrait
 	public readonly sourceAst: ISourceAstTrait
+	public readonly callGraph: ICallGraphTrait
 	public readonly anchors: IAnchorTrait
 	public readonly diagnostics: IDiagnosticsTrait
 	public readonly editor: IEditorTrait
@@ -98,6 +101,7 @@ export class SurfaceAdapter implements ToolExecutionEnvironment {
 			},
 		}
 		this.diagnostics = buildDiagnosticsTrait()
+		this.callGraph = buildCallGraphTrait()
 		this.editor = buildEditorTrait(config)
 		this.context = config.context
 		this.orchestration = buildOrchestrationTrait(config)

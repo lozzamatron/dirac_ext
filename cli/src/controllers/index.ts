@@ -252,6 +252,17 @@ export class CliWorkspaceServiceClient implements WorkspaceServiceClientInterfac
 		return proto.host.GetDiagnosticsResponse.create({ fileDiagnostics: [] })
 	}
 
+	async getCallHierarchy(_request: proto.host.GetCallHierarchyRequest): Promise<proto.host.GetCallHierarchyResponse> {
+		// Dirac EXT (WP7): a call hierarchy comes from a live language server, and the CLI host has
+		// none. Say so rather than returning an empty node list — "nothing calls this" and "I could
+		// not look" are opposite answers, and the tool's whole value is not blurring them.
+		return proto.host.GetCallHierarchyResponse.create({
+			resolved: false,
+			unresolvedReason: "Call hierarchy is unavailable in the CLI host: it has no language server to ask.",
+			nodes: [],
+		})
+	}
+
 	async openProblemsPanel(_request: proto.host.OpenProblemsPanelRequest): Promise<proto.host.OpenProblemsPanelResponse> {
 		printInfo("Run linters to see problems")
 		return proto.host.OpenProblemsPanelResponse.create({})
