@@ -17,19 +17,26 @@ curl -fL -o /tmp/dirac-ext-0.5.13.vsix \
 # 2. Verify it (must print: /tmp/dirac-ext-0.5.13.vsix: OK)
 echo "9fa79df9f543936203decc3abb2a048e9b857f44519eaef7c24fb96233e4af31  /tmp/dirac-ext-0.5.13.vsix" | sha256sum -c -
 
-# 3. Install — use whichever CLI exists
-if command -v code-server >/dev/null; then
-  code-server --install-extension /tmp/dirac-ext-0.5.13.vsix --force
+# 3. Pick the CLI that talks to the RUNNING editor.
+#    Inside a VS Code / code-server terminal, `code-server` / `code` is a shim wired to the live
+#    server. Without that wiring, call the real code-server binary with the running server's own
+#    --extensions-dir, or the extension lands in a folder the server never reads.
+if [ -n "$VSCODE_IPC_HOOK_CLI" ] && command -v code-server >/dev/null; then
+  VSC=(code-server)
+elif [ -n "$VSCODE_IPC_HOOK_CLI" ] && command -v code >/dev/null; then
+  VSC=(code)
+elif CS=$(find / -path '*/code-server/bin/code-server' -type f 2>/dev/null | head -1) && [ -n "$CS" ]; then
+  EXT_DIR=$(ps -eo args | grep -o -- '--extensions-dir[= ][^ ]*' | head -1 | sed 's/--extensions-dir[= ]//')
+  VSC=("$CS" ${EXT_DIR:+--extensions-dir "$EXT_DIR"})
 else
-  code --install-extension /tmp/dirac-ext-0.5.13.vsix --force
+  VSC=(code)   # desktop VS Code
 fi
+echo "Using: ${VSC[*]}"
 
-# 4. Confirm (must list lozza.dirac-ext)
-(command -v code-server >/dev/null && code-server --list-extensions || code --list-extensions) | grep -i dirac
+# 4. Install, then confirm (must list lozza.dirac-ext)
+"${VSC[@]}" --install-extension /tmp/dirac-ext-0.5.13.vsix --force
+"${VSC[@]}" --list-extensions | grep -i dirac-ext
 ```
-
-If `code-server` is not on `PATH`, find it with
-`find / -path '*bin/code-server' -type f 2>/dev/null | head -1` and use that full path.
 
 Then **stop and hand over to the human** for the steps below — they happen in the UI.
 
