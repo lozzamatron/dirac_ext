@@ -2,6 +2,8 @@
 
 > ## This is **Dirac EXT**, a fork of [dirac-run/dirac](https://github.com/dirac-run/dirac)
 >
+> **To install it, see [`INSTALL.md`](INSTALL.md)** — a prebuilt `.vsix` from Releases; no build, no upstream Dirac needed.
+>
 > Forked at `041fce18` (v0.5.13). It installs side by side with upstream Dirac under its own identity
 > (`lozza.dirac-ext`), shares the same `~/.dirac/data`, and adds four things:
 >
