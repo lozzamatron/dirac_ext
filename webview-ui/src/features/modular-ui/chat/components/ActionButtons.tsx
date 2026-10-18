@@ -29,7 +29,6 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({ task, chatState, messageH
 	} = chatState
 	const [isProcessing, setIsProcessing] = useState(false)
 
-	const { lastMessage, secondLastMessage } = chatState
 	const activeCard = useChatStore((state) => {
 		const activeCardId = state.uiActionState?.activeCardId
 		const activeCardIndex = activeCardId ? state.messageIndexById.get(activeCardId) : undefined
@@ -44,19 +43,12 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({ task, chatState, messageH
 		}
 	}, [uiActionState, setSendingDisabled])
 
-	// Clear input when transitioning from command_output to api_req
-	// This happens when user provides feedback during command execution
-	useEffect(() => {
-		if (
-			lastMessage?.content.type === "api_status" &&
-			secondLastMessage?.content.type === "card" &&
-			secondLastMessage.content.card.icon === "terminal"
-		) {
-			chatState.setInputValue("")
-			chatState.setSelectedImages([])
-			chatState.setSelectedFiles([])
-		}
-	}, [lastMessage, secondLastMessage, chatState])
+	// Dirac EXT: upstream cleared the input here whenever the last message was an api_status following
+	// a terminal card. `chatState` is a fresh object on every render, so that effect re-ran on EVERY
+	// render — including the one caused by each keystroke — and wiped the composer for as long as the
+	// agent was thinking after a shell command. Every send path already clears the input on success
+	// (handleSendMessage, clearInputState in executeButtonAction), so the effect is removed, not
+	// narrowed: even a one-shot clear on that transition would delete an unsent draft.
 
 	const handleActionClick = useCallback(
 		async (action: ButtonActionType, value?: string, text?: string, images?: string[], files?: string[]) => {

@@ -647,6 +647,27 @@ chat input sometimes does not submit (prompt stays in the box). 2 of ~10 fresh-w
 
 ---
 
+## Fix: the composer wiped every keystroke while the agent thought after a shell command (2026-10-18, branch `ext/fix-input-wipe`)
+
+Owner's report: in a tab, while Dirac works, "it deletes every character I enter". Upstream bug, present
+in pristine v0.5.13 and v0.5.22, not tab-specific. `ActionButtons.tsx` cleared the input from an effect
+whenever `lastMessage` was `api_status` and `secondLastMessage` a terminal card — i.e. the agent thinking
+right after running a command — with `chatState` in its deps. `useChatState()` returns a fresh object
+literal every render, so the effect re-ran on EVERY render, including the one each keystroke causes.
+Every send path already clears the input on success (`handleSendMessage`, `clearInputState` in
+`executeButtonAction`), so the effect is **removed** (a one-shot clear on the transition would still
+delete an unsent draft). Touched upstream file: `webview-ui/src/features/modular-ui/chat/components/ActionButtons.tsx`.
+New test: `ActionButtons.test.tsx` — 6 clears in 6 renders on the old code, 0 on the fix.
+
+Evidence: `tools/probe-input-wiped-after-command.mjs` (tab, three `echo` commands with thinking between,
+one keystroke / 150 ms for 48 s): **9 keystrokes wiped before, 0 after**. Webview suite: same 6 failing
+names as pristine v0.5.22 (run with `--no-file-parallelism`). Worth reporting upstream.
+
+Harness note: over `http://192.168.1.203:8087` (not a secure context) headless Chromium renders every
+webview blank, even with `--unsafely-treat-insecure-origin-as-secure`; drive `http://localhost:8443`.
+
+---
+
 ## Build-host facts (not fork changes — they bite every WP)
 
 - **`npm run package` needs `unzip`, which this container does not have.** `scripts/prepare-extension-ripgrep-binaries.mjs`
