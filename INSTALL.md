@@ -12,10 +12,10 @@ the integrated terminal).
 ```bash
 # 1. Download the release asset
 curl -fL -o /tmp/dirac-ext-0.5.22.vsix \
-  https://github.com/lozzamatron/dirac_ext/releases/download/v0.5.22-ext.1/dirac-ext-0.5.22.vsix
+  https://github.com/lozzamatron/dirac_ext/releases/download/v0.5.22-ext.2/dirac-ext-0.5.22.vsix
 
 # 2. Verify it (must print: /tmp/dirac-ext-0.5.22.vsix: OK)
-echo "ee18fea0d6572a26bf97ab0d9aebedf0d50f463dee35ac441ddedb6a0b183656  /tmp/dirac-ext-0.5.22.vsix" | sha256sum -c -
+echo "b695af3a65a2edce58f9466564159139e607a4fd2da1104304e44f211a4bd1f7  /tmp/dirac-ext-0.5.22.vsix" | sha256sum -c -
 
 # 3. Pick the CLI that talks to the RUNNING editor.
 #    Inside a VS Code / code-server terminal, `code-server` / `code` is a shim wired to the live
