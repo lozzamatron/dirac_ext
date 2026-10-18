@@ -456,7 +456,11 @@ describe("TaskController task isolation", () => {
 		const { openTasks } = require("../../task/OpenTaskRegistry")
 		openTasks.clear()
 		openTasks.claim("same-task", "ctrl-same")
-		const currentTask = { taskId: "same-task", abortTask: sinon.stub().resolves(), retirePersistence: sinon.stub().resolves() } as any
+		const currentTask = {
+			taskId: "same-task",
+			abortTask: sinon.stub().resolves(),
+			retirePersistence: sinon.stub().resolves(),
+		} as any
 		let ownerWhenLocking: string | undefined
 		const stop = new Error("stop after lock")
 		const acquire = sinon.stub().callsFake(async () => {
