@@ -79,6 +79,7 @@ export interface UseTextInputReturn {
 	// Text manipulation
 	setText: (text: string | ((prev: string) => string)) => void
 	insertText: (text: string) => void
+	setValue: (value: { text: string; cursorPos: number }) => void
 	setCursorPos: (pos: number | ((prev: number) => number)) => void
 
 	// Deletion
@@ -119,6 +120,10 @@ export function useTextInput(): UseTextInputReturn {
 		},
 		[],
 	)
+
+	const setValue = useCallback((value: { text: string; cursorPos: number }) => updateState(() => value), [updateState])
+	const getText = useCallback(() => stateRef.current.text, [])
+	const getCursorPos = useCallback(() => stateRef.current.cursorPos, [])
 
 	// Text manipulation
 	const setText = useCallback(
@@ -285,13 +290,14 @@ export function useTextInput(): UseTextInputReturn {
 		cursorPos: state.cursorPos,
 		setText,
 		insertText,
+		setValue,
 		setCursorPos,
 		deleteCharBefore,
 		deleteCharsBefore,
 		deleteCharsAfter,
 		handleKeyboardSequence,
 		handleCtrlShortcut,
-		getText: () => stateRef.current.text,
-		getCursorPos: () => stateRef.current.cursorPos,
+		getText,
+		getCursorPos,
 	}
 }

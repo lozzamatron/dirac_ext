@@ -1,13 +1,14 @@
 import { strict as assert } from "node:assert"
 import * as modelPresets from "@core/models/modelProviderPresets"
+import { TaskStatus } from "@shared/ExtensionMessage"
 import { describe, it } from "mocha"
 import sinon from "sinon"
+import { StreamingMetricsManager } from "../StreamingMetricsManager"
 import { attemptApiRequest } from "../TaskApiRequestAttempt"
 import * as requestBuilder from "../TaskRequestBuilder"
 import * as requestOutcome from "../TaskRequestOutcome"
-import { StreamingMetricsManager } from "../StreamingMetricsManager"
+import { TaskState } from "../TaskState"
 import * as steering from "../TaskSteering"
-import { TaskStatus } from "@shared/ExtensionMessage"
 
 function failingStream(error: Error) {
 	return {
@@ -30,6 +31,43 @@ function emptyStream() {
 }
 
 describe("TaskApiRequestAttempt request runtime", () => {
+	for (const firstChunk of [
+		{ type: "text", text: "Partial response" },
+		{ type: "tool_calls", tool_call: { function: { id: "tool1", name: "write_to_file", arguments: "{}" } } },
+	]) {
+		it(`does not replay a request after yielding ${firstChunk.type}`, async () => {
+			const sandbox = sinon.createSandbox()
+			try {
+				sandbox.stub(requestBuilder, "buildApiRequestParams").resolves({
+					systemPrompt: "system",
+					toolSnapshot: { nativeTools: [] },
+					contextManagementMetadata: { truncatedConversationHistory: [] },
+					providerInfo: { providerId: "anthropic", model: { id: "model", info: {} }, mode: "act" },
+				} as any)
+				sandbox.stub(steering, "appendQueuedSteeringToNextApiRequest").resolves()
+				const retry = sandbox.stub(requestOutcome, "handleApiRequestError").resolves(true)
+				const failure = new Error("connection reset after output")
+				const createMessage = sandbox.stub().callsFake(async function* () {
+					yield firstChunk
+					throw failure
+				})
+				const ctx = {
+					taskState: new TaskState(),
+					postStateToWebview: async () => {},
+					requestRuntime: { api: { createMessage } },
+					apiConversationManager: { prepareProviderConversationDispatch: async () => ({ messages: [], options: {} }) },
+				} as any
+				const stream = attemptApiRequest(ctx, -1, 0)
+				assert.deepEqual((await stream.next()).value, firstChunk)
+				await assert.rejects(stream.next(), (error) => error === failure)
+				sinon.assert.calledOnce(createMessage)
+				sinon.assert.notCalled(retry)
+			} finally {
+				sandbox.restore()
+			}
+		})
+	}
+
 	it("reuses the exact request runtime and API handler across an automatic retry", async () => {
 		const sandbox = sinon.createSandbox()
 		try {
@@ -63,19 +101,15 @@ describe("TaskApiRequestAttempt request runtime", () => {
 				requestRuntime,
 				postStateToWebview: sandbox.stub().resolves(),
 				messageStateHandler: { updateDiracMessage: sandbox.stub().resolves() },
-				taskState: {
-					abort: false,
-					isApiRequestActive: false,
-					activeVoiceStreamId: undefined,
-					status: undefined,
-					isWaitingForFirstChunk: false,
-				},
+				taskState: new TaskState(),
 				steeringContext: {},
 				apiConversationManager: {
-					prepareProviderConversationDispatch: sandbox.stub().callsFake(async ({ systemPrompt, tools, truncatedMessages }) => ({
-						messages: truncatedMessages,
-						options: { systemPrompt, tools },
-					})),
+					prepareProviderConversationDispatch: sandbox
+						.stub()
+						.callsFake(async ({ systemPrompt, tools, truncatedMessages }) => ({
+							messages: truncatedMessages,
+							options: { systemPrompt, tools },
+						})),
 				},
 				stateManager: {},
 			} as any
@@ -103,10 +137,14 @@ describe("TaskApiRequestAttempt request runtime", () => {
 		try {
 			let finishFirstChunk!: (chunk: { done: true; value: undefined }) => void
 			let startedReading!: () => void
-			const reading = new Promise<void>((resolve) => { startedReading = resolve })
+			const reading = new Promise<void>((resolve) => {
+				startedReading = resolve
+			})
 			const next = sandbox.stub().callsFake(() => {
 				startedReading()
-				return new Promise((resolve) => { finishFirstChunk = resolve })
+				return new Promise((resolve) => {
+					finishFirstChunk = resolve
+				})
 			})
 			sandbox.stub(requestBuilder, "buildApiRequestParams").resolves({
 				systemPrompt: "system",
@@ -116,7 +154,8 @@ describe("TaskApiRequestAttempt request runtime", () => {
 			} as any)
 			sandbox.stub(steering, "appendQueuedSteeringToNextApiRequest").resolves()
 			sandbox.stub(StreamingMetricsManager.prototype, "updateApiReqMsgFromMetrics").resolves()
-			const taskState = { status: TaskStatus.BUILDING_REQUEST, isWaitingForFirstChunk: false, abort: false }
+			const taskState = new TaskState()
+			taskState.status = TaskStatus.BUILDING_REQUEST
 			const publish = sandbox.stub().callsFake(async () => {
 				assert.equal(taskState.status, TaskStatus.WAITING_FOR_API)
 				sinon.assert.notCalled(next)
@@ -139,5 +178,4 @@ describe("TaskApiRequestAttempt request runtime", () => {
 			sandbox.restore()
 		}
 	})
-
 })

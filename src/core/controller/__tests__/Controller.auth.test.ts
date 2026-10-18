@@ -59,7 +59,7 @@ describe("Controller — Auth delegate", () => {
 					getWorkspaceFolders: sandbox.stub().returns([]),
 					getWorkspacePaths: sandbox.stub().resolves({ paths: [tempDir] }),
 				},
-				envClient: {},
+				envClient: { openExternal: sandbox.stub().resolves({}) },
 				windowClient: {},
 			},
 			getEnvironmentVariables: sandbox.stub().returns({}),
@@ -190,14 +190,39 @@ describe("Controller — Auth delegate", () => {
 		)
 	})
 
-	it("completeGithubLogin initiates device flow and starts polling", async () => {
+	it("completeGithubLogin opens the verification URL through the host and starts polling when selected", async () => {
 		expectLoggerErrors()
 		const stub = (githubCopilotAuthModule.githubCopilotAuthManager as any).initiateDeviceFlow
 		stub.resolves({ user_code: "XYZ789", verification_uri: "https://claim.example.com", device_code: "dc", interval: 10 })
+		const showMessageStub = (HostProvider.window as any).showMessage as sinon.SinonStub
+		showMessageStub.resolves({ selectedOption: "Open GitHub" })
+
 		await controller.completeGithubLogin()
-		sandbox.assert.called(stub)
+
+		sandbox.assert.calledOnce(stub)
+		sandbox.assert.calledWith((HostProvider.window as any).showMessage, {
+			type: 1,
+			message: "GitHub Copilot: Enter code XYZ789 at https://claim.example.com",
+			options: { items: ["Open GitHub"] },
+		})
+		sandbox.assert.calledOnceWithExactly(
+			(HostProvider.env as any).openExternal,
+			sinon.match({ value: "https://claim.example.com" }),
+		)
+		sandbox.assert.calledOnceWithExactly((githubCopilotAuthModule.githubCopilotAuthManager as any).pollForToken, "dc", 10)
 		// Flush microtasks spawned by fire-and-forget pollForToken().then(postStateToWebview)
 		await new Promise((resolve) => setImmediate(resolve))
+	})
+
+	it("completeGithubLogin does not open a browser or poll when the prompt is dismissed", async () => {
+		const showMessageStub = (HostProvider.window as any).showMessage as sinon.SinonStub
+		showMessageStub.resolves({})
+
+		await controller.completeGithubLogin()
+
+		sandbox.assert.calledOnce((githubCopilotAuthModule.githubCopilotAuthManager as any).initiateDeviceFlow)
+		sandbox.assert.notCalled((HostProvider.env as any).openExternal)
+		sandbox.assert.notCalled((githubCopilotAuthModule.githubCopilotAuthManager as any).pollForToken)
 	})
 
 	it("completeGithubLogin shows error message on failure", async () => {

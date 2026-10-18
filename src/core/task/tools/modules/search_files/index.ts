@@ -68,7 +68,7 @@ export const search_files_spec: DiracToolSpec = {
 			required: false,
 			type: "boolean",
 			instruction:
-				`Optional. When true, each current matched/context source line is emitted as a standalone complete ANCHOR${getDelimiter()}CONTENT coordinate required by edit_file; headers and separators remain unanchored. If a file changes during search, anchored results for it are omitted and must be searched again. Default false.`,
+				`Optional. When true, each current matched/context source line is emitted as a standalone complete ANCHOR${getDelimiter()}CONTENT coordinate required by edit_file; headers and separators remain unanchored. A separate --- match at line N --- marker distinguishes the matched line from surrounding context; context before that marker may belong to a preceding block. If a file changes during search, anchored results for it are omitted and must be searched again. Default false.`,
 		},
 	],
 }

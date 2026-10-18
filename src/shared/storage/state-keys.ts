@@ -16,7 +16,7 @@ import { WorkspaceRoot } from "@shared/multi-root/types"
 import { InferenceSpeed, Mode, normalizeInferenceSpeed } from "@shared/storage/types"
 import { TelemetrySetting } from "@shared/TelemetrySetting"
 import { normalizeUserApprovedCommands, type UserApprovedCommand } from "@shared/UserApprovedCommand"
-import { LanguageModelChatSelector } from "vscode"
+import { LanguageModelChatSelector } from "@shared/vsCodeSelectorUtils"
 
 // ============================================================================
 // SINGLE SOURCE OF TRUTH FOR STORAGE KEYS
@@ -68,6 +68,7 @@ const GLOBAL_STATE_FIELDS = {
 	},
 	isNewUser: { default: true as boolean },
 	welcomeViewCompleted: { default: undefined as boolean | undefined },
+	unbiasedWelcomeOfferStatus: { default: undefined as "pending" | "dismissed" | "ineligible" | undefined },
 	workspaceRoots: { default: undefined as WorkspaceRoot[] | undefined },
 	primaryRootIndex: { default: 0 as number },
 	multiRootEnabled: { default: true as boolean },
@@ -80,6 +81,8 @@ const GLOBAL_STATE_FIELDS = {
 	// Path to worktree that should auto-open Dirac sidebar when launched
 	worktreeAutoOpenPath: { default: undefined as string | undefined },
 	uiActionState: { default: undefined as UIActionState | undefined },
+	unbiasedOAuthApiKeyHash: { default: undefined as string | undefined },
+	unbiasedOAuthWorkloadName: { default: undefined as string | undefined },
 } satisfies FieldDefinitions
 
 // Fields that map directly to ApiHandlerOptions in @shared/api.ts
@@ -281,6 +284,7 @@ const USER_SETTINGS_FIELDS = {
 	doubleCheckCompletionEnabled: { default: false as boolean },
 	lowVerbosityEnabled: { default: true as boolean },
 	cliTerminalColorMode: { default: undefined as "dark" | "light" | undefined },
+	cliVimMode: { default: false as boolean },
 
 	// OpenTelemetry configuration
 	openTelemetryEnabled: { default: true as boolean },
@@ -323,6 +327,7 @@ const SECRETS_KEYS = [
 	"geminiApiKey",
 	"openAiNativeApiKey",
 	"deepSeekApiKey",
+	"unbiasedApiKey",
 	"requestyApiKey",
 	"togetherApiKey",
 	"fireworksApiKey",

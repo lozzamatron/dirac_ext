@@ -162,8 +162,8 @@ describe("EditAstTool", () => {
 		sinon.assert.calledOnce(env.editor.applyAndSaveSilently as sinon.SinonStub)
 	})
 
-	it("preserves non-interactive subagent rejection when legacy auto-approval fails", async () => {
-		const { env } = makeEnv()
+	it("asks the user to approve subagent AST edits without Utility", async () => {
+		const { env, approvalCard } = makeEnv()
 		;(env.config as any).isSubagentExecution = true
 		;(env.config.callbacks.shouldAutoApproveToolWithPath as sinon.SinonStub).resolves(false)
 		;(env.sourceAst.planRename as sinon.SinonStub).resolves(renamePlan)
@@ -173,8 +173,28 @@ describe("EditAstTool", () => {
 			env,
 		)
 
-		assert.match(result, /non-interactive subagent/)
-		sinon.assert.notCalled(env.ui.createCard as sinon.SinonStub)
+		assert.match(result, /Rename completed/)
+		sinon.assert.calledOnce(env.ui.createCard as sinon.SinonStub)
+		sinon.assert.calledWithMatch(env.ui.createCard as sinon.SinonStub, { requireApproval: true })
+		sinon.assert.calledOnce(approvalCard.waitForInteraction as sinon.SinonStub)
+		sinon.assert.calledOnce(env.editor.applyAndSaveSilently as sinon.SinonStub)
+	})
+
+	it("does not apply subagent AST edits rejected by the user without Utility", async () => {
+		const { env, approvalCard } = makeEnv()
+		;(env.config as any).isSubagentExecution = true
+		;(env.config.callbacks.shouldAutoApproveToolWithPath as sinon.SinonStub).resolves(false)
+		;(env.sourceAst.planRename as sinon.SinonStub).resolves(renamePlan)
+		;(approvalCard.waitForInteraction as sinon.SinonStub).resolves({ action: DiracAskResponse.REJECT })
+
+		const result = await tool.processCall(
+			{ operation: "rename", targets: [{ path: "src", symbol: "oldName", replacement: "newName" }] },
+			env,
+		)
+
+		assert.equal(result, "The user denied this operation.")
+		sinon.assert.calledOnce(approvalCard.waitForInteraction as sinon.SinonStub)
+		sinon.assert.calledWith(approvalCard.finalize as sinon.SinonStub, CardStatus.CANCELLED)
 		sinon.assert.notCalled(env.editor.applyAndSaveSilently as sinon.SinonStub)
 	})
 

@@ -1,12 +1,8 @@
-import { getTasksDirectoryPath } from "@core/storage/disk"
 import { withTaskHistoryInventoryLock } from "@core/storage/taskHistory"
 import { Empty, StringArrayRequest } from "@shared/proto/dirac/common"
-import fs from "fs/promises"
-import path from "path"
 import { HostProvider } from "@/hosts/host-provider"
 import { ShowMessageType } from "@/shared/proto/host/window"
 import { Logger } from "@/shared/services/Logger"
-import { fileExistsAtPath } from "../../../utils/fs"
 import { Controller } from ".."
 import { deleteRunStorage } from "../TaskHistoryController"
 
@@ -62,16 +58,8 @@ async function deleteTaskWithId(controller: Controller, id: string): Promise<voi
 		}
 
 		await deleteRunStorage(historyItem)
-		const updatedTaskHistory = await controller.deleteTaskFromState(id)
+		await controller.deleteTaskFromState(id)
 		await controller.stateManager.flushPendingState()
-
-		// If no tasks remain, clean up everything
-		if (updatedTaskHistory.length === 0) {
-			const taskDirPath = getTasksDirectoryPath()
-			const checkpointsDirPath = path.join(HostProvider.get().globalStorageFsPath, "checkpoints")
-			if (await fileExistsAtPath(taskDirPath)) await fs.rm(taskDirPath, { recursive: true, force: true })
-			if (await fileExistsAtPath(checkpointsDirPath)) await fs.rm(checkpointsDirPath, { recursive: true, force: true })
-		}
 	} catch (error) {
 		Logger.debug(`Error deleting task ${id}:`, error)
 		throw error // Re-throw to let caller handle the error

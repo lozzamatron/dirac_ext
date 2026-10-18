@@ -44,6 +44,7 @@ type LanguageParsers = Record<string, { parser: Parser; query: Query }>
 type FileCandidate = { absolutePath: string; relPath: string }
 
 export class SymbolIndexService {
+	private eligibilityAbort = new AbortController()
 	private static instance: SymbolIndexService | null = null
 	private static readonly DEFAULT_MAX_FILE_SIZE_BYTES = 1024 * 1024
 	private static readonly MAX_FIRST_LINE_LENGTH = 5000
@@ -165,6 +166,7 @@ export class SymbolIndexService {
 
 	public dispose(): void {
 		this.disposed = true
+		this.eligibilityAbort.abort()
 		if (this.retryTimeout) clearTimeout(this.retryTimeout)
 		this.retryTimeout = null
 		if (this.runtime) void this.runtime.dispose()
@@ -201,6 +203,7 @@ export class SymbolIndexService {
 			try {
 				await this.reconcile(reason)
 			} catch (error) {
+				if (this.eligibilityAbort.signal.aborted) return
 				SymbolIndexTelemetry.recordFailure()
 				Logger.error(`[SymbolIndexService] Reconciliation failed (${reason}); completed batches retained`, error)
 			}
@@ -218,6 +221,10 @@ export class SymbolIndexService {
 		try {
 			const eligibilityResult = await eligibility.enumerate()
 			if (this.disposed || this.db !== db) return false
+			const watchersAdded = await this.runtime?.refreshWorkspaceDirectories(eligibilityResult.directories)
+			if (this.disposed || this.db !== db) return false
+			// Repair the gap between discovery and registration without overlapping reconciliations.
+			if (watchersAdded) void this.requestReconciliation("directory watchers registered")
 			const eligiblePaths = eligibilityResult.paths
 			const existingMetadata = db.getAllFilesMetadata()
 			const ineligiblePaths = [...existingMetadata.keys()].filter((relPath) => !eligiblePaths.has(relPath))
@@ -227,7 +234,7 @@ export class SymbolIndexService {
 			for (const relPath of eligiblePaths) {
 				const absolutePath = path.join(this.projectRoot, relPath)
 				try {
-					const stats = await fs.stat(absolutePath)
+					const stats = await fs.lstat(absolutePath)
 					if (!stats.isFile()) {
 						rejectedPaths.push(relPath)
 						continue
@@ -285,7 +292,7 @@ export class SymbolIndexService {
 		const removedPaths = new Set<string>()
 		const removedPathHints = new Set<string>()
 		const candidatePaths = new Map<string, FileCandidate>()
-		let directoryChangeDetected = false
+		const changedDirectories = new Set<string>()
 
 		for (const event of events) {
 			const relPath = path.normalize(path.relative(this.projectRoot, event.absolutePath))
@@ -301,7 +308,7 @@ export class SymbolIndexService {
 
 			let stats
 			try {
-				stats = await fs.stat(event.absolutePath)
+				stats = await fs.lstat(event.absolutePath)
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
 				removedPathHints.add(relPath)
@@ -309,7 +316,7 @@ export class SymbolIndexService {
 			}
 
 			if (stats.isDirectory()) {
-				directoryChangeDetected = true
+				changedDirectories.add(event.absolutePath)
 				continue
 			}
 			if (!stats.isFile() || !eligibility.admitsRelativePath(relPath)) {
@@ -319,6 +326,9 @@ export class SymbolIndexService {
 			}
 			candidatePaths.set(relPath, { absolutePath: event.absolutePath, relPath })
 		}
+
+		const directoryChangeDetected =
+			changedDirectories.size > 0 && (await eligibility.filterDirectoryPaths(changedDirectories)).size > 0
 
 		this.collectRemovedPaths(removedPathHints, removedPaths)
 
@@ -554,12 +564,14 @@ export class SymbolIndexService {
 	}
 
 	private async resetProjectDatabase(projectRoot: string): Promise<void> {
+		this.eligibilityAbort.abort()
 		if (this.runtime) await this.runtime.dispose()
 		this.runtime = null
 		await this.operationTail
 		if (this.db) this.db.close()
 		this.projectRoot = projectRoot
-		this.eligibility = new SymbolIndexEligibility(projectRoot)
+		this.eligibilityAbort = new AbortController()
+		this.eligibility = new SymbolIndexEligibility(projectRoot, this.eligibilityAbort.signal)
 		this.eligiblePaths = new Set()
 		this.externalControlPaths = new Set()
 

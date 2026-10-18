@@ -20,7 +20,7 @@ export function getTaskDirectoryPath(taskId: string): string {
 export async function listTaskDirectoryIds(): Promise<string[]> {
 	try {
 		const entries = await fs.readdir(getTasksDirectoryPath(), { withFileTypes: true })
-		return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name)
+		return entries.filter((entry) => entry.isDirectory() && !entry.name.endsWith(".lock")).map((entry) => entry.name)
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return []
 		throw error

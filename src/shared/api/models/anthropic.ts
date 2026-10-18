@@ -1,4 +1,5 @@
 import type { ModelInfo } from "./types"
+import { isOpenaiReasoningEffort } from "../../storage/types"
 import { MODEL_CAPABILITIES } from "./capabilities"
 
 export const ANTHROPIC_MIN_THINKING_BUDGET = 1_024
@@ -71,6 +72,18 @@ export const anthropicModels = {
 		cacheReadsPrice: 0.5,
 		description: "Claude Opus 5. Anthropic Fast mode is available at 2x token pricing when enabled.",
 	},
+	"claude-opus-5-5": {
+		...MODEL_CAPABILITIES["claude-opus-5-5"],
+		supportsPromptCache: true,
+		supportsFastMode: true,
+		fastModePriceMultiplier: 2,
+		inputPrice: 4.0,
+		outputPrice: 20.0,
+		cacheWritesPrice: 5.0,
+		cacheReadsPrice: 0.2,
+		description: "Claude Opus 5.5. Adaptive thinking is always on. Fast mode is available at 2x token pricing.",
+	},
+
 	"claude-fable-5": {
 		...MODEL_CAPABILITIES["claude-fable-5"],
 		supportsPromptCache: true,
@@ -81,11 +94,20 @@ export const anthropicModels = {
 	},
 } as const satisfies Record<string, ModelInfo>
 
+export function getAnthropicReasoningEffort(modelInfo: ModelInfo, requestedEffort?: string): string {
+	if (!modelInfo.thinkingAlwaysOn) return requestedEffort || modelInfo.defaultReasoningEffort || "high"
+	if (isOpenaiReasoningEffort(requestedEffort) && modelInfo.reasoningEffortOptions?.includes(requestedEffort)) {
+		return requestedEffort
+	}
+	return modelInfo.defaultReasoningEffort || "medium"
+}
+
 /**
  * Helper to determine if an Anthropic model supports adaptive thinking.
  * Default opt-in pattern: If it's a known "old" model (<= 4.5), use enabled.
  * Otherwise (>= 4.6 or unknown future model), use adaptive.
  */
+
 export function isAnthropicAdaptiveThinkingSupported(modelId: string, info?: ModelInfo): boolean {
 	if (info?.supportsAdaptiveThinking !== undefined) {
 		return info.supportsAdaptiveThinking

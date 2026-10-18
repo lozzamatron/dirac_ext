@@ -119,10 +119,10 @@ export class DeepSeekHandler implements ApiHandler {
 
 		const requestStartedAt = performance.now()
 		Logger.debug(`[DeepSeek ${model.id}] Dispatching request (${deepSeekMessages.length} messages, ${tools?.length ?? 0} tools)`)
+		// Omit max_tokens so DeepSeek applies its effort-specific default instead of its 384K maximum.
 		const stream = await client.chat.completions.create(
 			{
 				model: model.id,
-				max_tokens: model.info.maxTokens,
 				messages: deepSeekMessages as any,
 				stream: true,
 				stream_options: { include_usage: true },

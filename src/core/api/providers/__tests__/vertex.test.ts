@@ -476,6 +476,22 @@ describe("VertexHandler", () => {
 	})
 
 	describe("createMessage - reasoning configuration", () => {
+		it("sends Opus 5.5 with adaptive thinking and medium effort even without a thinking budget", async () => {
+			const handler = new VertexHandler({
+				vertexProjectId: "proj",
+				vertexRegion: "us-east1",
+				apiModelId: "claude-opus-5-5",
+			})
+			const create = stubAnthropicClient(handler, createAsyncIterable([]))
+
+			await collect(handler.createMessage("system", [{ role: "user", content: "hi" }]))
+
+			const [request] = create.firstCall.args
+			request.model.should.equal("claude-opus-5-5")
+			request.thinking.should.deepEqual({ type: "adaptive", display: "summarized" })
+			request.output_config.should.deepEqual({ effort: "medium" })
+		})
+
 		it("should enable adaptive thinking when supported and budget is non-zero", async () => {
 			const handler = new VertexHandler({
 				vertexProjectId: "proj",

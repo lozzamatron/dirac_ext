@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "version": "0.5.17",
+  "kind": "patch",
+  "announce": true,
+  "sourceTag": "v0.5.16",
+  "analyzedCommit": "5b69bb697d163a07d4ad9b196e6f5bfe14f1c9d7",
+  "headline": "Updates and improvements",
+  "highlights": [
+    {
+      "id": "feat-e82d21b7",
+      "title": "add GPT-6.1 Sol model support",
+      "category": "feat",
+      "evidence": [
+        "e82d21b7eea67901eea9d734ac5aa7b501d872c6"
+      ]
+    },
+    {
+      "id": "feat-ef4eebf3",
+      "title": "propagate child roles into task configuration",
+      "category": "feat",
+      "evidence": [
+        "ef4eebf338ba8f43cb75a798843ffccaf3b63fa3"
+      ]
+    },
+    {
+      "id": "feat-dd42b09a",
+      "title": "add new provider, unbiased",
+      "category": "feat",
+      "evidence": [
+        "dd42b09a2dc929f7179735f5ee0ffdf99c8fc9c2"
+      ]
+    },
+    {
+      "id": "fix-d8082a45",
+      "title": "finalize a Goal child's permission card too",
+      "category": "fix",
+      "evidence": [
+        "d8082a457f1feb640f744c60f96ef6fcdbe6c8c4"
+      ]
+    },
+    {
+      "id": "fix-45174103",
+      "title": "finalize a hand-answered custom-tool permission card",
+      "category": "fix",
+      "evidence": [
+        "45174103c838a7f6861f24ae54a3d7dd9658578c"
+      ]
+    }
+  ]
+}

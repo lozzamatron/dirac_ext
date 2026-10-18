@@ -1,111 +1,47 @@
-import { GoalStore } from "@core/goal/GoalStore"
-import { deleteTaskDirectory, getTasksDirectoryPath, listTaskDirectoryIds } from "@core/storage/disk"
-import { isGoalHistoryItem, type RunHistoryItem } from "@shared/HistoryItem"
-import { DeleteAllTaskHistoryCount } from "@shared/proto/dirac/task"
-import fs from "fs/promises"
-import path from "path"
-import { HostProvider } from "@/hosts/host-provider"
-import { getErrorMessage } from "@/shared/errors"
-import { ShowMessageRequest, ShowMessageType } from "@/shared/proto/host/window"
-import { Logger } from "@/shared/services/Logger"
 import { withTaskHistoryInventoryLock } from "@core/storage/taskHistory"
-import { fileExistsAtPath } from "../../../utils/fs"
+import { DeleteAllTaskHistoryCount } from "@shared/proto/dirac/task"
+import { HostProvider } from "@/hosts/host-provider"
+import { ShowMessageRequest, ShowMessageType } from "@/shared/proto/host/window"
 import { Controller } from ".."
+import { deleteRunsStorage } from "../TaskHistoryController"
 
-/**
- * Deletes all task history, with an option to preserve favorites
- * @param controller The controller instance
- * @returns Results with count of deleted tasks
- */
+/** Deletes only the selected history inventory, under each run's execution lock. */
 export async function deleteAllTaskHistory(controller: Controller): Promise<DeleteAllTaskHistoryCount> {
-	try {
-		const initialTaskHistory = controller.stateManager.getGlobalStateKey("taskHistory")
-		const userChoice = (
-			await HostProvider.window.showMessage(
-				ShowMessageRequest.create({
-					type: ShowMessageType.WARNING,
-					message: "What would you like to delete?",
-					options: {
-						modal: true,
-						items: ["Delete All Except Favorites", "Delete Everything"],
-					},
-				}),
-			)
-		).selectedOption
-
-		if (userChoice === undefined) {
+	const initialTaskHistory = controller.stateManager.getGlobalStateKey("taskHistory")
+	const userChoice = (
+		await HostProvider.window.showMessage(
+			ShowMessageRequest.create({
+				type: ShowMessageType.WARNING,
+				message: "What would you like to delete?",
+				options: { modal: true, items: ["Delete All Except Favorites", "Delete Everything"] },
+			}),
+		)
+	).selectedOption
+	if (userChoice === undefined) return DeleteAllTaskHistoryCount.create({ tasksDeleted: 0 })
+	const preserveFavorites = userChoice === "Delete All Except Favorites"
+	const initiallyHadFavorites = initialTaskHistory.some((task) => task.isFavorited === true)
+	if (preserveFavorites && !initialTaskHistory.some((task) => task.isFavorited === true) && !(await confirmDeleteAllTasks())) {
+		return DeleteAllTaskHistoryCount.create({ tasksDeleted: 0 })
+	}
+	return withTaskHistoryInventoryLock(async () => {
+		await controller.clearTask()
+		const history = controller.stateManager.getGlobalStateKey("taskHistory")
+		if (
+			preserveFavorites &&
+			initiallyHadFavorites &&
+			!history.some((item) => item.isFavorited) &&
+			!(await confirmDeleteAllTasks())
+		) {
+			await controller.postStateToWebview()
 			return DeleteAllTaskHistoryCount.create({ tasksDeleted: 0 })
 		}
-
-		const preserveFavorites = userChoice === "Delete All Except Favorites"
-		let deleteEverythingConfirmed = userChoice === "Delete Everything"
-		if (preserveFavorites && !initialTaskHistory.some((task) => task.isFavorited === true)) {
-			deleteEverythingConfirmed = await confirmDeleteAllTasks()
-			if (!deleteEverythingConfirmed) {
-				return DeleteAllTaskHistoryCount.create({ tasksDeleted: 0 })
-			}
-		}
-
-		return withTaskHistoryInventoryLock(async () => {
-			await controller.clearTask()
-			const currentTaskHistory = controller.stateManager.getGlobalStateKey("taskHistory")
-			const totalTasks = currentTaskHistory.length
-
-			if (preserveFavorites) {
-				const favoritedTasks = currentTaskHistory.filter((task) => task.isFavorited === true)
-				if (favoritedTasks.length > 0) {
-					await cleanupRunFiles(favoritedTasks)
-					controller.stateManager.replaceTaskHistory(favoritedTasks)
-					await controller.stateManager.flushPendingState()
-
-					try {
-						await controller.postStateToWebview()
-					} catch (webviewErr) {
-						Logger.error("Error posting to webview:", webviewErr)
-					}
-
-					return DeleteAllTaskHistoryCount.create({
-						tasksDeleted: totalTasks - favoritedTasks.length,
-					})
-				}
-				if (!deleteEverythingConfirmed && !(await confirmDeleteAllTasks())) {
-					await controller.postStateToWebview()
-					return DeleteAllTaskHistoryCount.create({ tasksDeleted: 0 })
-				}
-			}
-
-			try {
-				const taskDirPath = getTasksDirectoryPath()
-				if (await fileExistsAtPath(taskDirPath)) {
-					await fs.rm(taskDirPath, { recursive: true, force: true })
-				}
-
-				const checkpointsDirPath = path.join(HostProvider.get().globalStorageFsPath, "checkpoints")
-				if (await fileExistsAtPath(checkpointsDirPath)) {
-					await fs.rm(checkpointsDirPath, { recursive: true, force: true })
-				}
-			} catch (error) {
-				HostProvider.window.showMessage({
-					type: ShowMessageType.ERROR,
-					message: `Encountered error while deleting task history, there may be some files left behind. Error: ${getErrorMessage(error)}`,
-				})
-				throw error
-			}
-			controller.stateManager.replaceTaskHistory([])
-			await controller.stateManager.flushPendingState()
-
-			try {
-				await controller.postStateToWebview()
-			} catch (webviewErr) {
-				Logger.error("Error posting to webview:", webviewErr)
-			}
-
-			return DeleteAllTaskHistoryCount.create({ tasksDeleted: totalTasks })
-		})
-	} catch (error) {
-		Logger.error("Error in deleteAllTaskHistory:", error)
-		throw error
-	}
+		const items = history.filter((item) => !preserveFavorites || !item.isFavorited)
+		await deleteRunsStorage(items)
+		await controller.stateManager.removeTaskHistoryItems(items.map((item) => item.id))
+		await controller.stateManager.flushPendingState()
+		await controller.postStateToWebview()
+		return DeleteAllTaskHistoryCount.create({ tasksDeleted: items.length })
+	})
 }
 
 async function confirmDeleteAllTasks(): Promise<boolean> {
@@ -121,21 +57,4 @@ async function confirmDeleteAllTasks(): Promise<boolean> {
 	).selectedOption
 
 	return answer === "Delete All Tasks"
-}
-
-/**
- * Helper function to cleanup task files while preserving specified tasks
- */
-async function cleanupRunFiles(preservedItems: RunHistoryItem[]): Promise<void> {
-	const preservedDirectoryIds = new Set(preservedItems.map((item) => item.id))
-	const goalStore = new GoalStore()
-	for (const item of preservedItems) {
-		if (!isGoalHistoryItem(item)) continue
-		const goal = await goalStore.read(item.id)
-		for (const child of goal.children) preservedDirectoryIds.add(child.id)
-	}
-
-	const taskDirectoryIds = await listTaskDirectoryIds()
-	Logger.debug(`[cleanupRunFiles] Found ${taskDirectoryIds.length} task directories`)
-	await Promise.all(taskDirectoryIds.filter((id) => !preservedDirectoryIds.has(id)).map((id) => deleteTaskDirectory(id)))
 }

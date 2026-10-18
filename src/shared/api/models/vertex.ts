@@ -118,6 +118,16 @@ export const vertexModels = {
 			supportsThinkingLevel: true,
 		},
 	},
+	"gemini-4-argon": {
+		...MODEL_CAPABILITIES["gemini-4-argon"],
+		supportsPromptCache: true,
+		supportsGlobalEndpoint: true,
+		inputPrice: 2.0,
+		outputPrice: 10.0,
+		cacheReadsPrice: 0.1,
+		cacheWritesPrice: 0.0,
+		description: "Google's Gemini 4 Argon model for agentic workflows and multimodal reasoning.",
+	},
 	"claude-sonnet-4-6": {
 		...MODEL_CAPABILITIES["claude-sonnet-4-6"],
 		supportsPromptCache: true,
@@ -170,6 +180,16 @@ export const vertexModels = {
 		cacheWritesPrice: 6.25,
 		cacheReadsPrice: 0.5,
 	},
+	"claude-opus-5-5": {
+		...MODEL_CAPABILITIES["claude-opus-5-5"],
+		supportsPromptCache: true,
+		supportsGlobalEndpoint: true,
+		inputPrice: 4.0,
+		outputPrice: 20.0,
+		cacheWritesPrice: 5.0,
+		cacheReadsPrice: 0.2,
+	},
+
 	"claude-fable-5": {
 		...MODEL_CAPABILITIES["claude-fable-5"],
 		supportsPromptCache: true,

@@ -1,22 +1,23 @@
 import { cleanupLegacyCheckpoints } from "@integrations/checkpoints/CheckpointMigration"
 import type { HistoryItem } from "@shared/HistoryItem"
+import { TaskStatus } from "@shared/ExtensionMessage"
 import { type Settings } from "@shared/storage/state-keys"
+import pTimeout from "p-timeout"
+import pWaitFor from "p-wait-for"
+import { Logger } from "@/shared/services/Logger"
+import { getCwd, getDesktopDir } from "@/utils/path"
+import type { StateManager } from "../../storage/StateManager"
+import { getTaskDirectoryPath } from "../../storage/taskDirectory"
+import { Task } from "../../task"
 import {
 	createTaskWorkingConfiguration,
 	type TaskWorkingConfiguration,
 	type TaskWorkingConfigurationInput,
 } from "../../task/runtime/TaskWorkingConfiguration"
-import pWaitFor from "p-wait-for"
-import pTimeout from "p-timeout"
-import type { FolderLockWithRetryResult } from "@/core/locks/types"
-import { Logger } from "@/shared/services/Logger"
-import { getCwd, getDesktopDir } from "@/utils/path"
-import type { StateManager } from "../../storage/StateManager"
-import { Task } from "../../task"
+import { acquireTaskLock } from "../../task/TaskLockUtils"
 import { deserializeTaskError, type TaskRunOutcome } from "../../task/TaskRunOutcome"
 import { openTasks } from "../../task/OpenTaskRegistry"
 import { applyTaskTitle } from "../../webview/taskTitle"
-import { releaseTaskLock, tryAcquireTaskLockWithRetry } from "../../task/TaskLockUtils"
 import { detectWorkspaceRoots } from "../../workspace/detection"
 import { setupWorkspaceManager } from "../../workspace/setup"
 import type { WorkspaceRootManager } from "../../workspace/WorkspaceRootManager"
@@ -80,7 +81,7 @@ export class TaskController {
 
 	constructor(
 		private readonly deps: ITaskControllerDependencies,
-		private readonly tryAcquireTaskLockWithRetryFn: typeof tryAcquireTaskLockWithRetry = tryAcquireTaskLockWithRetry,
+		private readonly acquireTaskLockFn: typeof acquireTaskLock = acquireTaskLock,
 		private readonly setupWorkspaceManagerFn: typeof setupWorkspaceManager = setupWorkspaceManager,
 		private readonly detectRootsFn: typeof detectWorkspaceRoots = detectWorkspaceRoots,
 		private readonly getCwdFn: (defaultDir: string) => Promise<string> = getCwd,
@@ -121,6 +122,35 @@ export class TaskController {
 		return () => this.taskReplacementListeners.delete(listener)
 	}
 
+	/** Return a live task ready for follow-up input, restoring ended runs without losing their conversation. */
+	async prepareTaskForFollowUp(initializationOptions?: TaskInitializationOptions): Promise<Task> {
+		const task = this._task
+		if (!task) throw new Error("No task available for follow-up")
+
+		// Completion output can reach the client before the loop clears its previous response.
+		if (task.stateView.didAttemptCompletion && !task.stateView.runOutcome) {
+			await pWaitFor(
+				() =>
+					this._task !== task ||
+					task.stateView.runOutcome !== undefined ||
+					task.stateView.status === TaskStatus.COMPLETED ||
+					task.stateView.status === TaskStatus.AWAITING_USER_INPUT,
+				{ interval: 10 },
+			)
+		}
+		if (this._task !== task) throw new Error(`Task ${task.taskId} changed while preparing a follow-up`)
+
+		const waitingForInput =
+			task.stateView.status === TaskStatus.COMPLETED ||
+			task.stateView.status === TaskStatus.CANCELLED ||
+			task.stateView.status === TaskStatus.AWAITING_USER_INPUT
+		if (!task.stateView.runOutcome && waitingForInput) return task
+
+		await this.reinitExistingTaskFromId(task.taskId, initializationOptions)
+		if (!this._task) throw new Error(`Task ${task.taskId} was not restored for follow-up`)
+		return this._task
+	}
+
 	private reconstructionInitializationOptions(task: Task): TaskInitializationOptions {
 		const {
 			runtimeConfigurationOverrides: _runtimeOverrides,
@@ -141,7 +171,7 @@ export class TaskController {
 			runFailure = { error }
 		}
 
-		const replacement = task.taskState.pendingTaskReplacement
+		const replacement = task.stateView.pendingTaskReplacement
 		if (this._task !== task || !replacement) {
 			if (runFailure) throw runFailure.error
 			return
@@ -236,44 +266,20 @@ export class TaskController {
 		_watcherFactory?: any,
 		initializationOptions?: TaskInitializationOptions,
 	): Promise<string> {
-		// Controller is required to construct a Task; fail fast with a clear error if missing
 		if (!this.deps.controller) {
 			throw new Error("TaskController.initTask requires a Controller instance")
 		}
 		const controller = this.deps.controller
-		this.currentConversationUlid = conversationUlid
-		this.currentInitializationOptions = initializationOptions
-		await this.clearTask()
-		this.deps.stateManager.refreshModelProviderPresetsFromDisk()
-
-		const isNewUser = this.deps.stateManager.getGlobalStateKey("isNewUser")
-		const taskHistory = this.deps.stateManager.getGlobalStateKey("taskHistory")
-
-		const NEW_USER_TASK_COUNT_THRESHOLD = 10
-
-		if (isNewUser && !historyItem && taskHistory && taskHistory.length >= NEW_USER_TASK_COUNT_THRESHOLD) {
-			this.deps.stateManager.setGlobalState("isNewUser", false)
-			await this.deps.postStateToWebview()
-		}
-
-		this._workspaceManager = this.deps.workspaceCwd
-			? await controller.ensureWorkspaceManager()
-			: await this.setupWorkspaceManagerFn({
-					stateManager: this.deps.stateManager,
-					detectRoots: this.detectRootsFn,
-				})
-		if (!this._workspaceManager) {
-			throw new Error("TaskController.initTask could not initialize a workspace manager")
-		}
-
-		const cwd = this._workspaceManager.getPrimaryRoot()?.path || (await this.getCwdFn(this.getDesktopDirFn()))
-
 		const taskId = historyItem?.id || Date.now().toString()
+		// Same-ID reconstruction must retire our current writer before reacquiring ownership.
+		if (this._task?.taskId === taskId) await this.clearTask()
 
-		// Dirac EXT: the SQLite lock below is keyed by a per-PROCESS instance address, so it cannot
-		// stop a second controller in this same window from opening the same task. Claim it here
-		// first; on conflict the owning webview is revealed and this init is abandoned quietly.
-		const controllerId = this.deps.controller?.id
+		// Dirac EXT: the task lock below guards against OTHER processes; it cannot tell two controllers in
+		// this same window apart. Claim the task process-locally first; on conflict the owning webview is
+		// revealed and this init is abandoned quietly, leaving this controller's current task untouched.
+		// The claim comes AFTER the same-ID clear above (which releases our own earlier claim on this id)
+		// and BEFORE the `clearTask()` below, which by then can only retire a different, previous task.
+		const controllerId = controller.id
 		if (!controllerId) {
 			// Dirac EXT: without a controller id the process-local claim is skipped, so a second
 			// view could open this task; warn instead of silently hiding the broken invariant.
@@ -284,7 +290,7 @@ export class TaskController {
 			if (!openTasks.claim(taskId, controllerId)) {
 				Logger.warn(`[Task ${taskId}] Already open in another Dirac EXT view; not initializing a second copy`)
 				// The task id is real — it just belongs to the other view, which the conflict handler
-				// has revealed. This controller keeps no task, so its webview stays on the empty state.
+				// has revealed.
 				return taskId
 			}
 			claimedHere = true
@@ -297,24 +303,32 @@ export class TaskController {
 		}
 
 		try {
-			let taskLockAcquired = false
-			const lockResult: FolderLockWithRetryResult = await this.tryAcquireTaskLockWithRetryFn(taskId)
-
-			if (!lockResult.acquired && !lockResult.skipped) {
-				const errorMessage = lockResult.conflictingLock
-					? `Task locked by instance (${lockResult.conflictingLock.held_by})`
-					: "Failed to acquire task lock"
-				throw new Error(errorMessage)
-			}
-
-			taskLockAcquired = lockResult.acquired
-			if (lockResult.acquired) {
-				Logger.debug(`[Task ${taskId}] Task lock acquired`)
-			} else {
-				Logger.debug(`[Task ${taskId}] Task lock skipped (VS Code)`)
-			}
+			const releaseTaskLock = await this.acquireTaskLockFn(getTaskDirectoryPath(taskId))
 
 			try {
+				await this.clearTask()
+				this.currentConversationUlid = conversationUlid
+				this.currentInitializationOptions = initializationOptions
+				this.deps.stateManager.refreshModelProviderPresetsFromDisk()
+
+				const isNewUser = this.deps.stateManager.getGlobalStateKey("isNewUser")
+				const taskHistory = this.deps.stateManager.getGlobalStateKey("taskHistory")
+				const NEW_USER_TASK_COUNT_THRESHOLD = 10
+				if (isNewUser && !historyItem && taskHistory && taskHistory.length >= NEW_USER_TASK_COUNT_THRESHOLD) {
+					this.deps.stateManager.setGlobalState("isNewUser", false)
+					await this.deps.postStateToWebview()
+				}
+
+				this._workspaceManager = this.deps.workspaceCwd
+					? await controller.ensureWorkspaceManager()
+					: await this.setupWorkspaceManagerFn({
+							stateManager: this.deps.stateManager,
+							detectRoots: this.detectRootsFn,
+						})
+				if (!this._workspaceManager) {
+					throw new Error("TaskController.initTask could not initialize a workspace manager")
+				}
+				const cwd = this._workspaceManager.getPrimaryRoot()?.path || (await this.getCwdFn(this.getDesktopDirFn()))
 				await this.deps.stateManager.loadTaskSettings(taskId)
 				if (taskSettings) {
 					this.deps.stateManager.setTaskSettingsBatch(taskId, taskSettings)
@@ -362,7 +376,7 @@ export class TaskController {
 					historyItem,
 					taskId,
 					conversationUlid,
-					taskLockAcquired,
+					releaseTaskLock,
 					pinnedContext: initializationOptions?.pinnedContext,
 					onContextCompacted: initializationOptions?.onContextCompacted,
 					switchToActMode: initializationOptions?.switchToActMode,
@@ -370,12 +384,11 @@ export class TaskController {
 					enqueuePreRequestSteeringMessages: async () => initializationOptions?.enqueueSteeringMessages?.(this._task!),
 				})
 			} catch (error) {
-				if (taskLockAcquired) {
-					await releaseTaskLock(taskId)
-				}
+				await releaseTaskLock()
 				throw error
 			}
 
+			this.currentConversationUlid = this._task.ulid
 			if (historyItem) {
 				await this.startHistoricalTaskAndWaitForRestore(this._task)
 			} else if (task || images || files) {
@@ -383,7 +396,6 @@ export class TaskController {
 			} else {
 				this._taskRunPromise = undefined
 			}
-
 			return this._task.taskId
 		} catch (error) {
 			// Dirac EXT: a claim that outlives a failed init would block every later attempt to open
@@ -439,9 +451,9 @@ export class TaskController {
 
 			await pWaitFor(
 				() =>
-					task.taskState.isApiRequestActive === false ||
-					task.taskState.didFinishAbortingStream ||
-					task.taskState.isWaitingForFirstChunk,
+					task.stateView.isApiRequestActive === false ||
+					task.stateView.didFinishAbortingStream ||
+					task.stateView.isWaitingForFirstChunk,
 				{
 					timeout: 3_000,
 				},

@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "version": "0.5.14",
+  "kind": "patch",
+  "announce": true,
+  "sourceTag": "v0.5.13",
+  "analyzedCommit": "b190b1ec745147a6ddc8993668447e122d330f3a",
+  "headline": "Updates and improvements",
+  "highlights": [
+    {
+      "id": "feat-b1eb9dc1",
+      "title": "add opus 5.5 and grok 4.7",
+      "category": "feat",
+      "evidence": [
+        "b1eb9dc11a826a94d7e8440669bce0e1d349306d"
+      ]
+    },
+    {
+      "id": "feat-580976fb",
+      "title": "addd gpt 6 sol and luna",
+      "category": "feat",
+      "evidence": [
+        "580976fbc487ed01711c1d85c724b0bf5b4fa104"
+      ]
+    },
+    {
+      "id": "fix-b190b1ec",
+      "title": "ignore replayed history when settling follow-up tasks",
+      "category": "fix",
+      "evidence": [
+        "b190b1ec745147a6ddc8993668447e122d330f3a"
+      ]
+    },
+    {
+      "id": "fix-94073f55",
+      "title": "plain-text resume runs follow-up turn instead of exiting early",
+      "category": "fix",
+      "evidence": [
+        "94073f55310d0956c5a0e7833931fc3e1ecd69b1"
+      ]
+    },
+    {
+      "id": "fix-1f0dc23b",
+      "title": "emit a patch when reasoning is finalized by a tool call",
+      "category": "fix",
+      "evidence": [
+        "1f0dc23b829a18496de4d1a9b9d266ed89ec6291"
+      ]
+    }
+  ]
+}

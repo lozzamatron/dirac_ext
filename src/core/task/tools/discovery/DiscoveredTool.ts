@@ -35,4 +35,6 @@ export interface DiscoveredTool {
 	modulePath: string
 	/** Content fingerprint for a user tool's manifest entrypoint. */
 	sourceHash?: string
+	/** False for metadata-only entries; must never be instantiated or exposed to a model. */
+	executable?: boolean
 }

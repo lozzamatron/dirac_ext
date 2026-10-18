@@ -49,4 +49,25 @@ describe("fingerprintWorkspaceRoots", () => {
 
 		assert.equal(await fingerprintWorkspaceRoots([workspace]), initial)
 	})
+	it("preserves sensitivity to Git-ignored deliverables but excludes Dirac's own index cache", async () => {
+		await writeFile(path.join(workspace, ".gitignore"), "dist/\n")
+		await mkdir(path.join(workspace, "dist"))
+		await writeFile(path.join(workspace, "dist", "artifact.txt"), "first")
+		const initial = await fingerprintWorkspaceRoots([workspace])
+		await mkdir(path.join(workspace, ".dirac-cache"))
+		await writeFile(path.join(workspace, ".dirac-cache", "symbol-index.db"), "internal")
+		assert.equal(await fingerprintWorkspaceRoots([workspace]), initial)
+		await writeFile(path.join(workspace, "dist", "artifact.txt"), "other")
+		assert.notEqual(await fingerprintWorkspaceRoots([workspace]), initial)
+	})
+
+	it("rejects cancellation and exhausted budgets instead of accepting a partial fingerprint", async () => {
+		await writeFile(path.join(workspace, "artifact.txt"), "content")
+		await assert.rejects(fingerprintWorkspaceRoots([workspace], { maxBytes: 1 }), /byte budget/)
+		await assert.rejects(fingerprintWorkspaceRoots([workspace], { maxEntries: 0 }), /entry budget/)
+		await assert.rejects(
+			fingerprintWorkspaceRoots([workspace], { signal: AbortSignal.abort(new Error("cancelled")) }),
+			/cancelled/,
+		)
+	})
 })

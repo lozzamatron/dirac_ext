@@ -50,7 +50,9 @@ const ToolToggleRow = memo(({ tool, enabled, canToggle, onToggle }: ToolToggleRo
 			</div>
 			<p className="text-xs text-description mt-0.5 mb-0 line-clamp-2">{tool.description}</p>
 			<p className="text-xs text-description mt-0.5 mb-0">
-				{canToggle ? "Changes are saved to global settings." : "Task-scoped tools are always enabled."}
+				{tool.source === "workspace" && tool.executable === false
+					? "Workspace code is not approved. Review its source; enabling requests approval."
+					: canToggle ? "Changes are saved to global settings." : "Task-scoped tools are always enabled."}
 			</p>
 		</div>
 		<Switch
@@ -107,6 +109,7 @@ const ToolTogglePanel = ({ renderSectionHeader }: ToolTogglePanelProps) => {
 	const isToolEnabled = useCallback(
 		(tool: ToolMetadata) => {
 			if (tool.source === "task") return true
+			if (tool.executable === false) return false
 			const override = toolToggles[tool.id]
 			if (override !== undefined) return override
 			return tool.source === "builtin"

@@ -18,6 +18,7 @@ export async function assembleToolState(
 			description: tool.spec.description,
 			source: tool.source,
 			modulePath: tool.modulePath,
+			executable: tool.executable,
 		}))
 		return { availableTools, toolToggles: registry.getToggles() }
 	})

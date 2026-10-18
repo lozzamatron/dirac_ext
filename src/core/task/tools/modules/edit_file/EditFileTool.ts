@@ -6,6 +6,7 @@ import { DiracDefaultTool, DiracToolSpec } from "@/shared/tools"
 import { IDiracTool } from "../../interfaces/IDiracTool"
 import { IToolEnvironment } from "../../interfaces/IToolEnvironment"
 import { SurfaceType } from "../../interfaces/SurfaceType"
+import { ToolSkippedByUserMessage } from "../../types/ToolSkippedByUserMessage"
 import { ToolResponseCombiner } from "../../utils/ToolResponseCombiner"
 import { EditFileApplier } from "./EditFileApplier"
 import { EditFileApprovalFlow } from "./EditFileApprovalFlow"
@@ -41,7 +42,12 @@ RANGE RULES:
 1. Use the smallest range that fully contains the intended edit.
 2. For multi-line syntax, use the exact complete first and last lines, including the construct's closing syntax but no unrelated surrounding lines.
 3. Replacement text is ordinary source text and must not contain anchors.
-4. If an anchor fails, reread the smallest relevant range with include_anchors: true and copy its current anchored lines. Do not widen the range as a workaround.
+For a named block, confirm both the start and the intended closing line belong to that same block. If search context ends before the closing line, read the missing range before choosing an insertion or deletion anchor.
+4. A trailing newline terminates the last supplied line without inserting a blank line before the next existing line. Use two trailing newlines to insert one blank line there. At end of file, a trailing newline is retained.
+When removing a block, preserve existing blank separators exactly; include only the block's start through its closing line unless explicitly asked to remove surrounding blank lines.
+For exact edits, do not add a blank separator before a copied or moved block unless requested; check the resulting diff for unintended blank lines.
+5. In a file ending with a newline, the final empty anchored line represents EOF. insert_after on that line appends without adding a blank line; start text with a newline only if a blank line is required.
+6. If an anchor fails, reread the smallest relevant range with include_anchors: true and copy its current anchored lines. Do not widen the range as a workaround.
 
 BATCHING RULES:
 Batch all non-overlapping edits into one call. Edits must not overlap; multiple files may be edited in the same call.`,
@@ -168,6 +174,12 @@ export class EditFileTool implements IDiracTool<EditFileArgs> {
 
 			return ToolResponseCombiner.combine(results)
 		} catch (error) {
+			// Text typed on the waiting card: the coordinator skips the cards and forwards the text.
+			if (error instanceof ToolSkippedByUserMessage) {
+				// A failing cleanup must not replace the skip, or the typed text is lost.
+				await env.editor.hideReview().catch(() => {})
+				throw error
+			}
 			const executionError = toError(error)
 			const cleanupFailures: string[] = []
 

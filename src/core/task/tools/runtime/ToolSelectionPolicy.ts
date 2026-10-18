@@ -1,4 +1,4 @@
-import type { DiscoveredTool } from "../discovery/DiscoveredTool"
+import type { DiscoveredTool } from "../discovery/DiscoveredTool";
 
 export type ToolSelectionPolicy =
 	| { mode: "delta"; enabledToolIds: readonly string[]; disabledToolIds: readonly string[] }
@@ -31,5 +31,5 @@ export function applyToolSelectionPolicy(
 		}
 	}
 
-	return allTools.filter((tool) => selectedIds.has(tool.id))
+	return allTools.filter((tool) => tool.executable !== false && selectedIds.has(tool.id))
 }

@@ -1,10 +1,10 @@
 import { TaskStatus } from "@shared/ExtensionMessage"
+import { ResponseOperation, responseOperationFromToolCall } from "@shared/responseTool"
 import { Session } from "@shared/services/Session"
 import { READ_ONLY_TOOLS } from "@shared/tools"
-import { responseOperationFromToolCall, ResponseOperation } from "@shared/responseTool"
 import cloneDeep from "clone-deep"
-import { ResponseProcessorDependencies } from "../types/response-processor"
 import type { ToolUse } from "../../assistant-message"
+import { ResponseProcessorDependencies } from "../types/response-processor"
 import { ResponseFormatter } from "./ResponseFormatter"
 
 // Presents assistant message content to the UI — streams text/reasoning deltas,
@@ -80,6 +80,8 @@ export class AssistantMessagePresenter {
 
 	// Determine if a block is complete based on its flag and position
 	private computeBlockComplete(block: any): boolean {
+		// Previews may stream, but execution starts only after the assistant turn is durable.
+		if (block.type === "tool_use" && !this.deps.taskState.didCompleteReadingStream) return false
 		if (block.isComplete) return true
 		const isNotLast = this.currentStreamingContentIndex < this.deps.taskState.assistantMessageContent.length - 1
 		const nextIsNotText =

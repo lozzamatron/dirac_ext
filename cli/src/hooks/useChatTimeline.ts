@@ -62,7 +62,7 @@ interface ChatTimelineOptions {
 	showHeader: boolean
 	layoutRows: ChatLayoutRows
 	terminalColumns: number
-	scrollOffset?: number
+	scrollFromTop?: number
 	shouldSuppressCardBody: CardBodySuppressionPolicy
 }
 
@@ -78,7 +78,7 @@ export function useChatTimeline({
 	showHeader,
 	layoutRows,
 	terminalColumns,
-	scrollOffset = 0,
+	scrollFromTop = 0,
 	shouldSuppressCardBody,
 }: ChatTimelineOptions): ChatTimelineResult {
 	const [taskSwitchKey, setTaskSwitchKey] = useState(0)
@@ -119,10 +119,10 @@ export function useChatTimeline({
 				activeVoiceStreamId,
 				layoutRows,
 				terminalColumns,
-				scrollOffset,
+				scrollFromTop,
 				shouldSuppressCardBody,
 			),
-		[dynamicTail, activeVoiceStreamId, layoutRows, terminalColumns, scrollOffset, shouldSuppressCardBody],
+		[dynamicTail, activeVoiceStreamId, layoutRows, terminalColumns, scrollFromTop, shouldSuppressCardBody],
 	)
 
 	return {
@@ -160,7 +160,7 @@ export function createDynamicTimelineItems(
 	_activeVoiceStreamId: string | undefined,
 	layoutRows: ChatLayoutRows,
 	terminalColumns: number,
-	scrollOffset = 0,
+	scrollFromTop = 0,
 	shouldSuppressCardBody: CardBodySuppressionPolicy,
 ): DynamicTimelinePlan {
 	if (dynamicMessages.length === 0) return { items: [], maxScrollOffset: 0 }
@@ -169,7 +169,7 @@ export function createDynamicTimelineItems(
 	const latestMessage = dynamicMessages[dynamicMessages.length - 1]
 	const latestRows = estimateMessageRows(latestMessage, terminalColumns, shouldSuppressCardBody)
 	if (latestRows >= rowBudget) {
-		return createExclusiveMessagePlan(latestMessage, rowBudget, terminalColumns, scrollOffset, shouldSuppressCardBody)
+		return createExclusiveMessagePlan(latestMessage, rowBudget, terminalColumns, scrollFromTop, shouldSuppressCardBody)
 	}
 
 	let remainingRows = rowBudget
@@ -195,7 +195,7 @@ function createExclusiveMessagePlan(
 	message: DiracMessage,
 	rowBudget: number,
 	terminalColumns: number,
-	scrollOffset: number,
+	scrollFromTop: number,
 	shouldSuppressCardBody: CardBodySuppressionPolicy,
 ): DynamicTimelinePlan {
 	const suppressCardBody = shouldSuppressCardBody(message)
@@ -214,7 +214,8 @@ function createExclusiveMessagePlan(
 			{
 				...createMessageItem(message),
 				maxContentLines: bodyLineBudget,
-				scrollOffset: Math.min(scrollOffset, maxScrollOffset),
+				// The clipping renderer measures from the bottom; the viewport is anchored at the top.
+				scrollOffset: Math.max(0, maxScrollOffset - scrollFromTop),
 			},
 		],
 		scrollMessageId: maxScrollOffset > 0 ? message.id : undefined,

@@ -31,6 +31,7 @@ export type ApiProvider =
 	| "requesty"
 	| "together"
 	| "deepseek"
+	| "unbiased"
 	| "qwen"
 	| "qwen-code"
 	| "doubao"
@@ -71,6 +72,7 @@ export const ALL_PROVIDERS: ApiProvider[] = [
 	"requesty",
 	"together",
 	"deepseek",
+	"unbiased",
 	"qwen",
 	"qwen-code",
 	"doubao",
@@ -124,6 +126,7 @@ import {
     cerebrasModels,
     claudeCodeModels,
     deepSeekModels,
+    unbiasedModels,
     doubaoModels,
     fireworksModels,
     geminiModels,
@@ -161,6 +164,7 @@ export const ALL_MODEL_MAPS: [ApiProvider, Record<string, ModelInfo>][] = [
 	["openai-native", openAiNativeModels],
 	["openai-codex", openAiCodexModels],
 	["deepseek", deepSeekModels],
+	["unbiased", unbiasedModels],
 	["huggingface", huggingFaceModels],
 	["qwen", internationalQwenModels],
 	["qwen", mainlandQwenModels],

@@ -70,6 +70,8 @@ export interface ToolMetadata {
 	description: string
 	source: "builtin" | "global" | "workspace" | "task"
 	modulePath: string
+	/** False when workspace code is not approved for execution. */
+	executable?: boolean
 }
 
 export interface ExtensionState {
@@ -80,6 +82,7 @@ export interface ExtensionState {
 	goal?: GoalViewState | null
 	isNewUser: boolean
 	welcomeViewCompleted: boolean
+	shouldShowUnbiasedWelcome?: boolean
 	onboardingModels?: OnboardingModelGroup | undefined
 	apiConfiguration?: ApiConfiguration
 	modelProviderPresets: ModelProviderPreset[]
@@ -166,6 +169,8 @@ export interface ExtensionState {
 	availableTools: ToolMetadata[]
 	toolToggles: Record<string, boolean>
 	welcomeBanners?: BannerCardData[]
+	/** Explicit null clears identity from an earlier Unbiased login. */
+	unbiasedWorkloadName?: string | null
 	openAiCodexIsAuthenticated?: boolean
 	openAiCodexEmail?: string
 	openAiCodexUsage?: OpenAiCodexUsageSnapshot
@@ -206,19 +211,19 @@ export enum DiracMessageType {
 export type DiracMessageContent =
 	/** Stateless conversational content (speech, reasoning, info) */
 	| {
-		type: DiracMessageType.MARKDOWN
-		content: string
-		isReasoning?: boolean
-		images?: string[]
-		files?: string[]
-		isCompletion?: boolean
-		completionType?: "act" | "plan"
-		showFeedback?: boolean
-		role?: "user" | "assistant"
-		agentId?: number
-		agentName?: string
-		steering?: { status: SteeringTranscriptStatus }
-	}
+			type: DiracMessageType.MARKDOWN
+			content: string
+			isReasoning?: boolean
+			images?: string[]
+			files?: string[]
+			isCompletion?: boolean
+			completionType?: "act" | "plan"
+			showFeedback?: boolean
+			role?: "user" | "assistant"
+			agentId?: number
+			agentName?: string
+			steering?: { status: SteeringTranscriptStatus }
+	  }
 	/** Stateful tool-mediated unit of work */
 	| { type: DiracMessageType.CARD; card: Card }
 	/** System telemetry and vitals (tokens, cost, latency) */

@@ -26,6 +26,7 @@ service StateService {
   rpc updateTelemetrySetting(TelemetrySettingRequest) returns (Empty);
   rpc captureOnboardingProgress(OnboardingProgressRequest) returns (Empty);
   rpc setWelcomeViewCompleted(BooleanRequest) returns (Empty);
+  rpc dismissUnbiasedWelcomeOffer(EmptyRequest) returns (Empty);
   rpc updateInfoBannerVersion(Int64Request) returns (Empty);
   rpc updateModelBannerVersion(Int64Request) returns (Empty);
   rpc updateCliBannerVersion(Int64Request) returns (Empty);
@@ -119,6 +120,7 @@ message Secrets {
   optional string openai_codex_oauth_credentials = 53;
   optional string open_ai_compatible_custom_api_key = 54;
   optional string github_copilot_oauth_credentials = 55;
+  optional string unbiased_api_key = 56;
 }
 
 // NOTE: Add new fields under API_HANDLER_SETTINGS_FIELDS or USER_SETTINGS_FIELDS
@@ -306,6 +308,7 @@ message Settings {
   optional string utility_model_permission_policy = 213;
   optional string plan_mode_inference_speed = 214;
   optional string act_mode_inference_speed = 215;
+  optional bool cli_vim_mode = 216;
 }
 
 message State {

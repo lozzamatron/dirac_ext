@@ -10,6 +10,8 @@ import { normalizeUserApprovedCommands, type UserApprovedCommand } from "@shared
 import { Box, Text, useInput } from "ink"
 import React, { useCallback, useMemo, useState } from "react"
 import { StateManager } from "@/core/storage/StateManager"
+import { signOutUnbiasedKey } from "@/core/controller/models/signOutUnbiased"
+import { getUnbiasedOAuthWorkloadName } from "@/integrations/unbiased/oauth-account"
 import type { TaskWorkingConfigurationPatch } from "@/core/task/runtime/TaskWorkingConfiguration"
 import { ToolRegistry } from "@/core/task/tools/registry/ToolRegistry"
 import { Logger } from "@/shared/services/Logger"
@@ -17,6 +19,7 @@ import { TerminalColorMode, terminalColorMode, theme } from "../../constants/the
 import { useStdinContext } from "../../context/StdinContext"
 import { useTerminalSize } from "../../hooks/useTerminalSize"
 import { OpenAiCodexAuthView } from "../OpenAiCodexAuthView"
+import { UnbiasedAuthView } from "../UnbiasedAuthView"
 import { shouldIgnoreTerminalInput } from "../../utils/input"
 import { usesOpenRouterModels } from "../../utils/openrouter-models"
 import type { ObjectEditorState } from "../ConfigViewComponents"
@@ -76,6 +79,7 @@ export const SettingsPanelContent: React.FC<SettingsPanelContentProps> = ({
 	const [pendingProvider, setPendingProvider] = useState<string | null>(null)
 	const [isConfiguringBedrock, setIsConfiguringBedrock] = useState(false)
 	const [isWaitingForCodexAuth, setIsWaitingForCodexAuth] = useState(false)
+	const [isWaitingForUnbiasedAuth, setIsWaitingForUnbiasedAuth] = useState(false)
 	const [isWaitingForGithubAuth, setIsWaitingForGithubAuth] = useState(false)
 	const [githubAuthData, setGithubAuthData] = useState<any>(null)
 	const [apiKeyValue, setApiKeyValue] = useState("")
@@ -146,6 +150,7 @@ export const SettingsPanelContent: React.FC<SettingsPanelContentProps> = ({
 		() => stateManager.getGlobalSettingsKey("modelProviderPresets") ?? [],
 	)
 
+	const [vimModeEnabled, setVimModeEnabled] = useState(() => stateManager.getGlobalSettingsKey("cliVimMode"))
 	const [lightTerminalTheme, setLightTerminalTheme] = useState<boolean>(() => {
 		const savedPreference = stateManager.getGlobalSettingsKey("cliTerminalColorMode")
 		return savedPreference ? savedPreference === "light" : terminalColorMode === TerminalColorMode.LIGHT
@@ -278,11 +283,18 @@ export const SettingsPanelContent: React.FC<SettingsPanelContentProps> = ({
 		utilityModelSelection,
 		utilityPermissionPolicy,
 		lightTerminalTheme,
+		vimModeEnabled,
 		preferredLanguage,
 		telemetry,
 		openAiHeaders,
 		autoCondenseContextLimit,
 		openAiCodexIsAuthenticated,
+		unbiasedIsAuthenticated: !!stateManager.getApiConfiguration().unbiasedApiKey,
+		unbiasedWorkloadName: getUnbiasedOAuthWorkloadName(
+			stateManager.getApiConfiguration().unbiasedApiKey,
+			stateManager.getGlobalStateKey("unbiasedOAuthApiKeyHash"),
+			stateManager.getGlobalStateKey("unbiasedOAuthWorkloadName"),
+		),
 		openAiCodexEmail,
 		githubIsAuthenticated,
 		githubEmail,
@@ -350,6 +362,7 @@ export const SettingsPanelContent: React.FC<SettingsPanelContentProps> = ({
 		setUtilityPermissionPolicy,
 		setFeatures,
 		setLightTerminalTheme,
+		setVimModeEnabled,
 		preferredLanguage,
 		setPreferredLanguage,
 		telemetry,
@@ -450,8 +463,20 @@ export const SettingsPanelContent: React.FC<SettingsPanelContentProps> = ({
 			setHelpItem(item)
 			return
 		}
+		if (item.key === "unbiasedSignIn") {
+			setIsWaitingForUnbiasedAuth(true)
+			return
+		}
+		if (item.key === "unbiasedSignOut") {
+			void runSettingsAction("Unbiased sign-out", async () => {
+				await signOutUnbiasedKey(stateManager, controller?.task)
+				await controller?.postStateToWebview()
+				refreshModelIds()
+			})
+			return
+		}
 		void runSettingsAction("update", handleAction)
-	}, [handleAction, items, openDestination, runSettingsAction, selectedIndex])
+	}, [handleAction, items, openDestination, runSettingsAction, selectedIndex, stateManager, controller, refreshModelIds])
 
 	const selectSearchResult = useCallback(
 		(result: SettingsSearchResult) => {
@@ -498,6 +523,7 @@ export const SettingsPanelContent: React.FC<SettingsPanelContentProps> = ({
 				return
 			}
 			if (isWaitingForCodexAuth) return
+			if (isWaitingForUnbiasedAuth) return
 			if (isWaitingForGithubAuth) {
 				if (key.escape) cancelGithubAuth()
 				return
@@ -657,11 +683,22 @@ export const SettingsPanelContent: React.FC<SettingsPanelContentProps> = ({
 				/>
 			)
 		}
+		if (isWaitingForUnbiasedAuth) return (
+			<UnbiasedAuthView controller={controller} onCancel={() => setIsWaitingForUnbiasedAuth(false)} onComplete={() => {
+				setProvider("unbiased")
+				refreshModelIds()
+				setIsWaitingForUnbiasedAuth(false)
+			}} />
+		)
 		if (isWaitingForCodexAuth) return (
 			<OpenAiCodexAuthView onCancel={() => setIsWaitingForCodexAuth(false)} onComplete={completeCodexAuth} />
 		)
 		if (isWaitingForGithubAuth && githubAuthData) return <GithubAuthPage githubAuthData={githubAuthData} />
 		if (isPickingModel && pickingModelKey) {
+			const apiConfiguration = controller?.task?.getWorkingConfiguration().apiConfiguration ?? stateManager.getApiConfiguration()
+			const selectedProvider = pickingModelKey === "actModelId"
+				? apiConfiguration.actModeApiProvider
+				: apiConfiguration.planModeApiProvider || apiConfiguration.actModeApiProvider
 			const label = pickingModelKey === "actModelId" ? "Model ID (Act)" : "Model ID (Plan)"
 			return (
 				<ModelPickerPage
@@ -669,7 +706,7 @@ export const SettingsPanelContent: React.FC<SettingsPanelContentProps> = ({
 					isActive={isPickingModel && !isApplyingSetting}
 					label={label}
 					onSelect={(modelId) => runSettingsAction("model update", () => handleModelSelect(modelId))}
-					provider={pendingProvider || provider}
+					provider={pendingProvider || selectedProvider || provider}
 				/>
 			)
 		}
@@ -741,6 +778,7 @@ export const SettingsPanelContent: React.FC<SettingsPanelContentProps> = ({
 		isEnteringApiKey ||
 		isConfiguringBedrock ||
 		isWaitingForCodexAuth ||
+		isWaitingForUnbiasedAuth ||
 		isBedrockCustomFlow ||
 		isWaitingForGithubAuth ||
 		isEditing ||

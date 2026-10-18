@@ -1,45 +1,23 @@
-/**
- * Cursor movement utilities for multi-line text input
- */
+import { getInputCursorRow, getInputVisualRows } from "./input-layout"
 
-/**
- * Move cursor up one line, preserving column position where possible
- */
-export function moveCursorUp(text: string, cursorPos: number): number {
-	const textBeforeCursor = text.slice(0, cursorPos)
-	const lastNewline = textBeforeCursor.lastIndexOf("\n")
+function moveCursorVertically(text: string, cursorPos: number, columns: number, direction: -1 | 1): number {
+	const rows = getInputVisualRows(text, columns)
+	const rowIndex = getInputCursorRow(rows, cursorPos)
+	const targetRowIndex = rowIndex + direction
+	if (targetRowIndex < 0) return 0
+	if (targetRowIndex >= rows.length) return text.length
 
-	if (lastNewline === -1) {
-		// Already on first line, move to start
-		return 0
-	}
-
-	const currentCol = cursorPos - lastNewline - 1
-	const prevLineStart = textBeforeCursor.lastIndexOf("\n", lastNewline - 1) + 1
-	const prevLineLength = lastNewline - prevLineStart
-	const newCol = Math.min(currentCol, prevLineLength)
-
-	return prevLineStart + newCol
+	const currentColumn = rows[rowIndex].cursorStops.reduce((column, stop) => (stop.index <= cursorPos ? stop.column : column), 0)
+	const targetRow = rows[targetRowIndex]
+	return targetRow.cursorStops.reduce((index, stop) => (stop.column <= currentColumn ? stop.index : index), targetRow.start)
 }
 
-/**
- * Move cursor down one line, preserving column position where possible
- */
-export function moveCursorDown(text: string, cursorPos: number): number {
-	const textBeforeCursor = text.slice(0, cursorPos)
-	const lastNewline = textBeforeCursor.lastIndexOf("\n")
-	const currentCol = lastNewline === -1 ? cursorPos : cursorPos - lastNewline - 1
-	const nextNewline = text.indexOf("\n", cursorPos)
+/** Move up one rendered input row, preserving the terminal column when possible. */
+export function moveCursorUp(text: string, cursorPos: number, columns: number): number {
+	return moveCursorVertically(text, cursorPos, columns, -1)
+}
 
-	if (nextNewline === -1) {
-		// Already on last line, move to end
-		return text.length
-	}
-
-	const nextLineStart = nextNewline + 1
-	const nextLineEnd = text.indexOf("\n", nextLineStart)
-	const nextLineLength = nextLineEnd === -1 ? text.length - nextLineStart : nextLineEnd - nextLineStart
-	const newCol = Math.min(currentCol, nextLineLength)
-
-	return nextLineStart + newCol
+/** Move down one rendered input row, preserving the terminal column when possible. */
+export function moveCursorDown(text: string, cursorPos: number, columns: number): number {
+	return moveCursorVertically(text, cursorPos, columns, 1)
 }

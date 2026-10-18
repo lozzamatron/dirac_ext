@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "version": "0.5.16",
+  "kind": "patch",
+  "announce": true,
+  "sourceTag": "v0.5.15",
+  "analyzedCommit": "26bca2f3f5c40b5af7dec86390d69976039256af",
+  "headline": "Updates and improvements",
+  "highlights": [
+    {
+      "id": "feat-585b2d44",
+      "title": "summarize search matches and note EOF blank lines",
+      "category": "feat",
+      "evidence": [
+        "585b2d44b7eb37cd8a1b1711133e7baa18142683"
+      ]
+    },
+    {
+      "id": "fix-26bca2f3",
+      "title": "report selected line ranges in output headers",
+      "category": "fix",
+      "evidence": [
+        "26bca2f3f5c40b5af7dec86390d69976039256af"
+      ]
+    },
+    {
+      "id": "fix-f5994f4c",
+      "title": "handle insertions at the EOF anchor correctly",
+      "category": "fix",
+      "evidence": [
+        "f5994f4c6f8ae5b4b2d83ce1500973c89b502dc8"
+      ]
+    },
+    {
+      "id": "fix-a47bd79f",
+      "title": "preserve prompt whitespace when parsing image references",
+      "category": "fix",
+      "evidence": [
+        "a47bd79fbe439630578f0854381b999f6e7224de"
+      ]
+    }
+  ]
+}

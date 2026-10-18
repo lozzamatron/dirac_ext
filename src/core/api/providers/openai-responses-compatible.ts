@@ -14,6 +14,7 @@ import { buildResponseCreateParams, mapResponseTools, processResponsesEvents } f
 interface OpenAiResponsesCompatibleHandlerOptions extends CommonApiHandlerOptions {
 	openAiApiKey?: string
 	openAiBaseUrl?: string
+	openAiHeaders?: Record<string, string>
 	openAiModelId?: string
 	openAiModelInfo?: ModelInfo
 	reasoningEffort?: string
@@ -41,6 +42,7 @@ export class OpenAiResponsesCompatibleHandler implements ApiHandler {
 				this.client = createOpenAIClient({
 					apiKey: this.options.openAiApiKey,
 					baseURL: this.options.openAiBaseUrl,
+					defaultHeaders: this.options.openAiHeaders,
 				})
 			} catch (error) {
 				throw new Error(`Error creating OpenAI client: ${getErrorMessage(error)}`)

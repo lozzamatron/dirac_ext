@@ -27,6 +27,25 @@ describe("NodeTextFileAccess", () => {
 		assert.ok(result.encoding.length > 0)
 	})
 
+	it("keeps valid UTF-8 after an escape character changes encoding detection", async () => {
+		const filePath = path.join(directory, "escape.sh")
+		const content =
+			"# Checkout\u00a0policy\u2014cafe\u0301\u2060\nregister_route 'checkout-\u001b1' 'legacy\u200bCheckout' 3\n"
+		await fs.writeFile(filePath, content, "utf8")
+
+		const result = await access.readText(filePath)
+		assert.strictEqual(result.content, content)
+		assert.strictEqual(result.encoding, "utf8")
+	})
+
+	it("decodes UTF-16 text with a BOM", async () => {
+		const filePath = path.join(directory, "utf16.txt")
+		await fs.writeFile(filePath, iconv.encode("\ufeffhello \u00e9", "utf16le"))
+
+		const result = await access.readText(filePath)
+		assert.strictEqual(result.content, "hello \u00e9")
+	})
+
 	it("decodes supported non-UTF-8 text through existing encoding detection", async () => {
 		const filePath = path.join(directory, "legacy.txt")
 		await fs.writeFile(filePath, iconv.encode("olá señor", "windows-1252"))

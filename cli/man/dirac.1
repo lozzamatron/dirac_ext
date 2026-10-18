@@ -46,6 +46,32 @@ With a prompt, it submits the first turn immediately.
 The interface supports approvals, feedback, follow-up messages, history,
 settings, model selection, skills, and task resumption.
 .PP
+Press \f[B]Enter\f[R] to submit a prompt.
+\f[B]Shift+Enter\f[R] inserts a newline when the terminal sends a
+distinct modified-Enter sequence (CSI-u \f[V]ESC [ 13 ; 2 u\f[R] or
+xterm modifyOtherKeys \f[V]ESC [ 27 ; 2 ; 13 \[ti]\f[R]).
+\f[B]Shift+Down\f[R] also inserts a newline.
+If Enter and Shift+Enter send the same carriage return, use Shift+Down
+or configure a Shift+Enter mapping to one of these sequences; identical
+input bytes cannot be distinguished.
+.PP
+\f[B]Ctrl+Up / Ctrl+Down\f[R] recall older/newer prompts from the
+current conversation and recent conversations in the same workspace.
+Recall fills the input without sending; edit and press Enter to submit.
+Moving forward past the newest prompt restores the original draft and
+cursor.
+Only text is recalled, not old attachments.
+Ordinary arrows still move the cursor or scroll the response.
+If the terminal or OS intercepts Ctrl+arrows, configure it to send
+\f[V]ESC [ 1 ; 5 A\f[R] / \f[V]ESC [ 1 ; 5 B\f[R].
+.PP
+Scrollable response cards, including proposed plans and follow-up
+responses, open at the beginning.
+Use \f[B]Down\f[R] for later lines and \f[B]Up\f[R] for earlier lines.
+In a multiline draft, arrows navigate the prompt first and scroll the
+response only at the draft\[cq]s navigation boundaries.
+Editing a draft retains the response\[cq]s scroll position.
+.PP
 \f[B]Standalone mode\f[R] is selected when \f[B]\[en]yolo\f[R] or
 \f[B]\[en]json\f[R] is present, stdin was piped, stdin is redirected, or
 stdout is redirected.
@@ -109,6 +135,21 @@ Use another Dirac home directory.
 Show the effective global and workspace configuration.
 .PP
 \f[B]dirac config\f[R] [\f[B]\[en]config\f[R] \f[I]path\f[R]]
+.SS tools
+.PP
+Print the current tool configuration as copy-pasteable comma-separated
+\f[B]\[en]enable-tool\f[R] and \f[B]\[en]disable-tool\f[R] options, then
+exit.
+.PP
+\f[B]dirac tools\f[R] [\f[B]\[en]cwd\f[R] \f[I]path\f[R]]
+[\f[B]\[en]config\f[R] \f[I]path\f[R]]
+.TP
+\f[B]-c\f[R], \f[B]\[en]cwd\f[R] \f[I]path\f[R]
+Select the workspace used to discover tools.
+The default is the current directory.
+.TP
+\f[B]\[en]config\f[R] \f[I]path\f[R]
+Use another Dirac home directory.
 .SS auth
 .PP
 Open the interactive provider setup or perform quick setup with flags.
@@ -236,6 +277,33 @@ Use AI-powered context compaction instead of mechanical truncation.
 .TP
 \f[B]\[en]subagents\f[R]
 Enable subagents for this task.
+.TP
+\f[B]\[en]enable-tool\f[R] \f[I]ids\f[R]
+Enable comma-separated configurable tool IDs over the saved
+configuration for this invocation.
+May be repeated and may be combined with \f[B]\[en]disable-tool\f[R]
+when the resolved sets are disjoint.
+.TP
+\f[B]\[en]disable-tool\f[R] \f[I]ids\f[R]
+Disable comma-separated configurable tool IDs over the saved
+configuration for this invocation.
+May be repeated and may be combined with \f[B]\[en]enable-tool\f[R] when
+the resolved sets are disjoint.
+.TP
+\f[B]\[en]only-tools\f[R] \f[I]ids\f[R]
+Use exactly the listed comma-separated configurable tool IDs for this
+invocation.
+This exact mode cannot be combined with \f[B]\[en]enable-tool\f[R] or
+\f[B]\[en]disable-tool\f[R].
+.PP
+Tool-selection options apply only to ordinary CLI tasks and are not
+persisted.
+They cannot be used with ACP, detached listen mode, Kanban, or Goals,
+and they never alter task-scoped tools.
+Lists accept canonical IDs or unambiguous names.
+Unknown, non-configurable, ambiguous, or conflicting tool identifiers
+stop startup with an error.
+Use \f[B]dirac tools\f[R] to list canonical IDs and saved status.
 .TP
 \f[B]\[en]headers\f[R] \f[I]headers\f[R]
 Set custom headers for an OpenAI-compatible provider.
@@ -395,6 +463,34 @@ dirac auth --provider openai --apikey \[dq]$OPENAI_API_KEY\[dq] --modelid gpt-4o
 Interactive setup masks keys in terminal output.
 Quick setup validates the provider and required values instead of
 falling back silently.
+.SH VIM PROMPT EDITING
+.PP
+Enable \f[B]Vim prompt editing\f[R] in \f[B]/settings \[->]
+Terminal\f[R], or search settings for \f[B]vim\f[R].
+It is disabled by default, saved across launches, and applies
+immediately.
+The footer shows \f[B]INSERT\f[R] or \f[B]NORMAL\f[R].
+New drafts start in INSERT; \f[B]Esc\f[R] enters NORMAL; \f[B]i\f[R],
+\f[B]a\f[R], \f[B]I\f[R], and \f[B]A\f[R] return to INSERT.
+Enter submits in either mode.
+.PP
+NORMAL supports \f[B]h/l\f[R] (graphemes), \f[B]j/k\f[R] (logical
+lines), \f[B]w/b/e\f[R] (words), \f[B]0/\[ha]/$\f[R] (line positions),
+and \f[B]gg/G\f[R] (draft start/last-line start).
+Use \f[B]d/c\f[R] with \f[B]h/l/w/b/e/0/\[ha]/$\f[R] to delete/change,
+\f[B]dd/cc\f[R] for lines, \f[B]D/C\f[R] to line end, and \f[B]x\f[R]
+for graphemes.
+Numeric counts include \f[B]3b\f[R], \f[B]2dw\f[R], and \f[B]d2w\f[R].
+\f[B]u\f[R] undoes; \f[B]Ctrl+R\f[R] redoes unless an active Goal owns
+that shortcut.
+Esc cancels an incomplete command.
+.PP
+Type, paste, complete slash commands, and insert file mentions in
+INSERT.
+Printable input in NORMAL is interpreted as editing commands.
+This subset does not implement registers, yank/put, search, repeat, or
+Ex commands.
+The preference does not affect standalone text/JSON or ACP input.
 .SH TERMINAL COLORS
 .PP
 Dirac uses semantic dark and light palettes in both interactive and

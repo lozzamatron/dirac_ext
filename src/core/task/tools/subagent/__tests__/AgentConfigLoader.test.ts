@@ -3,8 +3,17 @@ import fs from "fs/promises"
 import { afterEach, describe, it } from "mocha"
 import os from "os"
 import * as path from "path"
+import * as sinon from "sinon"
+import { Logger } from "@/shared/services/Logger"
 import { DiracDefaultTool, getToolUseNames } from "@/shared/tools"
-import { AgentConfigLoader, getAgentsConfigPath, parseAgentConfigFromYaml, readAgentConfigsFromDisk } from "../AgentConfigLoader"
+import {
+	AGENTS_CONFIG_DIRECTORY_NAME,
+	AgentConfigLoader,
+	getAgentsConfigPath,
+	getLegacyAgentsConfigPath,
+	parseAgentConfigFromYaml,
+	readAgentConfigsFromDisk,
+} from "../AgentConfigLoader"
 
 async function createTempHomeDir(): Promise<string> {
 	return fs.mkdtemp(path.join(os.tmpdir(), "agent-config-loader-"))
@@ -160,5 +169,201 @@ Reviewer prompt`,
 		await loader.watch()
 
 		assert.equal((loader as unknown as { watcher?: unknown }).watcher, undefined)
+	})
+
+	describe("Path resolution & legacy migration (ERR-1)", () => {
+		it("resolves agents directory inside ~/.dirac/Agents", () => {
+			const fakeHome = "/custom/home"
+			assert.strictEqual(getAgentsConfigPath(fakeHome), path.join(fakeHome, ".dirac", "Agents"))
+			assert.strictEqual(getLegacyAgentsConfigPath(fakeHome), path.join(fakeHome, "Documents", "Dirac", "Agents"))
+		})
+
+		it("migrates legacy agent configs from ~/Documents/Dirac/Agents to ~/.dirac/Agents", async () => {
+			const tempHome = await createTempHomeDir()
+			tempDirs.push(tempHome)
+
+			const legacyDir = getLegacyAgentsConfigPath(tempHome)
+			const newDir = getAgentsConfigPath(tempHome)
+			await fs.mkdir(legacyDir, { recursive: true })
+
+			await fs.writeFile(
+				path.join(legacyDir, "legacy-agent.yaml"),
+				`---
+name: legacy-agent
+description: migrated agent
+tools: read_file
+modelId: sonnet
+---
+
+Legacy prompt`,
+				"utf8",
+			)
+
+			const configs = await readAgentConfigsFromDisk(tempHome)
+			assert.strictEqual(configs.has("legacy-agent"), true)
+
+			// Verify file was migrated to new ~/.dirac/Agents directory
+			const migratedFile = path.join(newDir, "legacy-agent.yaml")
+			const exists = await fs.access(migratedFile).then(
+				() => true,
+				() => false,
+			)
+			assert.strictEqual(exists, true)
+		})
+
+		it("does not re-migrate a deleted agent config on subsequent reads", async () => {
+			const tempHome = await createTempHomeDir()
+			tempDirs.push(tempHome)
+
+			const legacyDir = getLegacyAgentsConfigPath(tempHome)
+			const newDir = getAgentsConfigPath(tempHome)
+			await fs.mkdir(legacyDir, { recursive: true })
+			await fs.writeFile(
+				path.join(legacyDir, "gone-agent.yaml"),
+				`---
+name: gone-agent
+description: migrated once
+tools: read_file
+modelId: sonnet
+---
+
+Prompt body`,
+				"utf8",
+			)
+
+			await readAgentConfigsFromDisk(tempHome)
+			await fs.rm(path.join(newDir, "gone-agent.yaml"))
+
+			const second = await readAgentConfigsFromDisk(tempHome)
+			assert.strictEqual(second.has("gone-agent"), false)
+			const exists = await fs.access(path.join(newDir, "gone-agent.yaml")).then(
+				() => true,
+				() => false,
+			)
+			assert.strictEqual(exists, false)
+		})
+
+		it("retries an incomplete migration after a legacy file copy fails", async () => {
+			const tempHome = await createTempHomeDir()
+			tempDirs.push(tempHome)
+			const legacyDir = getLegacyAgentsConfigPath(tempHome)
+			const newDir = getAgentsConfigPath(tempHome)
+			await fs.mkdir(legacyDir, { recursive: true })
+			await fs.writeFile(path.join(legacyDir, "retry.yaml"), `---
+name: retry
+description: migrated after permissions recover
+tools: read_file
+---
+Prompt body`, "utf8")
+
+			const copyStub = sinon
+				.stub(fs, "copyFile")
+				.rejects(Object.assign(new Error("permission denied"), { code: "EACCES" }))
+			try {
+				const first = await readAgentConfigsFromDisk(tempHome)
+				assert.equal(first.has("retry"), false)
+				await assert.rejects(fs.access(path.join(newDir, ".legacy-migration-complete")), { code: "ENOENT" })
+			} finally {
+				copyStub.restore()
+			}
+
+			const second = await readAgentConfigsFromDisk(tempHome)
+			assert.equal(second.has("retry"), true)
+			await fs.access(path.join(newDir, ".legacy-migration-complete"))
+		})
+
+		it("does not import real-home legacy configs into a custom DIRAC_DIR profile", async () => {
+			const tempHome = await createTempHomeDir()
+			const profileDir = await createTempHomeDir()
+			tempDirs.push(tempHome, profileDir)
+
+			const legacyDir = getLegacyAgentsConfigPath(tempHome)
+			await fs.mkdir(legacyDir, { recursive: true })
+			const legacyFile = path.join(legacyDir, "real-agent.yaml")
+			await fs.writeFile(
+				legacyFile,
+				`---
+name: real-agent
+description: should stay put
+tools: read_file
+modelId: sonnet
+---
+
+Prompt body`,
+				"utf8",
+			)
+
+			process.env.DIRAC_DIR = profileDir
+			try {
+				const configs = await readAgentConfigsFromDisk(tempHome)
+				assert.strictEqual(configs.has("real-agent"), false)
+				const imported = await fs.access(path.join(profileDir, AGENTS_CONFIG_DIRECTORY_NAME, "real-agent.yaml")).then(
+					() => true,
+					() => false,
+				)
+				assert.strictEqual(imported, false)
+				// Legacy source is never modified
+				const legacyIntact = await fs.access(legacyFile).then(
+					() => true,
+					() => false,
+				)
+				assert.strictEqual(legacyIntact, true)
+			} finally {
+				delete process.env.DIRAC_DIR
+			}
+		})
+
+		it("still migrates when DIRAC_DIR points at the default location", async () => {
+			const tempHome = await createTempHomeDir()
+			tempDirs.push(tempHome)
+
+			const legacyDir = getLegacyAgentsConfigPath(tempHome)
+			await fs.mkdir(legacyDir, { recursive: true })
+			await fs.writeFile(
+				path.join(legacyDir, "edge-agent.yaml"),
+				`---
+name: edge-agent
+description: explicit default dir
+tools: read_file
+modelId: sonnet
+---
+
+Prompt body`,
+				"utf8",
+			)
+
+			process.env.DIRAC_DIR = path.join(tempHome, ".dirac")
+			try {
+				const configs = await readAgentConfigsFromDisk(tempHome)
+				assert.strictEqual(configs.has("edge-agent"), true)
+			} finally {
+				delete process.env.DIRAC_DIR
+			}
+		})
+
+		it("logs a warning instead of error when watcher encounters EPERM/EACCES", async () => {
+			const tempHome = await createTempHomeDir()
+			tempDirs.push(tempHome)
+
+			const loader = AgentConfigLoader.getInstance(tempHome)
+			const warnSpy = sinon.spy(Logger, "warn")
+			const errorSpy = sinon.spy(Logger, "error")
+
+			try {
+				await loader.ready()
+				const watcher = (loader as any).watcher
+				if (watcher) {
+					const epermError = Object.assign(new Error("EPERM: operation not permitted"), { code: "EPERM" })
+					watcher.emit("error", epermError)
+				}
+
+				sinon.assert.called(warnSpy)
+				sinon.assert.notCalled(errorSpy)
+			} finally {
+				warnSpy.restore()
+				errorSpy.restore()
+				await loader.dispose()
+			}
+		})
 	})
 })

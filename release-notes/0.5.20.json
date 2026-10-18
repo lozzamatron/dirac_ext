@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "version": "0.5.20",
+  "kind": "patch",
+  "announce": true,
+  "sourceTag": "v0.5.19",
+  "analyzedCommit": "84af73c717a74c82fe8f6bd570b27cd3e618c11b",
+  "headline": "Updates and improvements",
+  "highlights": [
+    {
+      "id": "fix-59a7bfa6",
+      "title": "support Shift+Enter for newlines",
+      "category": "fix",
+      "evidence": [
+        "59a7bfa6c3dfb1d0d5bde0fe21da4169669d66a2"
+      ]
+    },
+    {
+      "id": "fix-477abfac",
+      "title": "align CLI prompt navigation with visual rows",
+      "category": "fix",
+      "evidence": [
+        "477abfac0d14bba53cb0053bf7cc83c44aac4b4d"
+      ]
+    },
+    {
+      "id": "fix-8d493753",
+      "title": "reject locked tasks before changing active state",
+      "category": "fix",
+      "evidence": [
+        "8d493753745bfb15121b1b9764f8576888f7d247"
+      ]
+    },
+    {
+      "id": "fix-f609b988",
+      "title": "scroll responses at prompt cursor boundaries",
+      "category": "fix",
+      "evidence": [
+        "f609b988b2fe15f22e35d62b6aa5f727c8b54a7f"
+      ]
+    },
+    {
+      "id": "fix-063b8a20",
+      "title": "Subagents permission escalation now correctly escalates to the user instead of auto denial",
+      "category": "fix",
+      "evidence": [
+        "063b8a20446dfd73aa597109e303f8ab4300214d"
+      ]
+    }
+  ]
+}

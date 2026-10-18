@@ -1,7 +1,11 @@
 import type { ToolMetadata } from "@shared/ExtensionMessage"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { SettingsItemType, SettingsTab } from "../types"
-import { createSettingsSearchResults, createToolItems, type UseSettingsItemsProps } from "./useSettingsItems"
+import { createSettingsItems, createSettingsSearchResults, createToolItems, type UseSettingsItemsProps } from "./useSettingsItems"
+
+vi.mock("@/core/storage/StateManager", () => ({
+	StateManager: { get: () => ({ getGlobalSettingsKey: () => undefined }) },
+}))
 
 const tool = (id: string, source: ToolMetadata["source"]): ToolMetadata => ({
 	id,
@@ -36,7 +40,7 @@ describe("CLI tool settings presentation", () => {
 		const global = results.find((result) => result.item.key === "global-tool")
 
 		expect(global?.searchText).toContain("global tool description")
-		expect(global?.searchText).toContain("global configuration")
+		expect(global?.searchText).toContain("global dirac configuration")
 		expect(global?.searchText).toContain("saved to global settings")
 	})
 
@@ -46,5 +50,55 @@ describe("CLI tool settings presentation", () => {
 
 		expect(autoCondense?.searchText).toContain("auto compact")
 		expect(autoCondense?.searchText).toContain("auto-compact")
+	})
+})
+
+describe("CLI Unbiased account presentation", () => {
+	const modelProps = {
+		...props,
+		currentTab: SettingsTab.MODELS_API,
+		provider: "unbiased",
+		actModelId: "pareto",
+		planModelId: "pareto",
+		separateModels: false,
+		actReasoningEffort: "medium",
+		planReasoningEffort: "medium",
+		openAiHeaders: {},
+		openRouterPinnedProviders: {},
+	} as UseSettingsItemsProps
+
+	it("shows only sign-in when no credentials exist", () => {
+		const items = createSettingsItems({ ...modelProps, unbiasedIsAuthenticated: false })
+		expect(items.find((item) => item.key === "unbiasedSignIn")).toMatchObject({ type: SettingsItemType.ACTION })
+		expect(items.some((item) => item.key === "unbiasedAccount" || item.key === "unbiasedSignOut")).toBe(false)
+	})
+
+	it.each([undefined, "Dirac workload"])("replaces sign-in with the saved account and sign-out for %s", (workloadName) => {
+		const items = createSettingsItems({
+			...modelProps,
+			unbiasedIsAuthenticated: true,
+			unbiasedWorkloadName: workloadName,
+		})
+		expect(items.find((item) => item.key === "unbiasedAccount")).toMatchObject({
+			type: SettingsItemType.READONLY,
+			value: workloadName || "Unbiased",
+		})
+		expect(items.find((item) => item.key === "unbiasedSignOut")).toMatchObject({ type: SettingsItemType.ACTION })
+		expect(items.some((item) => item.key === "unbiasedSignIn")).toBe(false)
+	})
+})
+
+describe("CLI Vim editing preference", () => {
+	it.each([undefined, false, true])("presents the opt-in Terminal setting for %s", (vimModeEnabled) => {
+		const items = createSettingsItems({ ...props, currentTab: SettingsTab.TERMINAL, vimModeEnabled })
+		expect(items.find((item) => item.key === "vimModeEnabled")).toMatchObject({
+			type: SettingsItemType.CHECKBOX, label: "Vim prompt editing", value: vimModeEnabled ?? false,
+		})
+	})
+
+	it("indexes vi/vim, mode and bindings keywords", () => {
+		const results = createSettingsSearchResults(props, [SettingsTab.TERMINAL])
+		const setting = results.find((result) => result.item.key === "vimModeEnabled")
+		for (const keyword of ["vi", "vim", "bindings", "normal", "insert"]) expect(setting?.searchText).toContain(keyword)
 	})
 })

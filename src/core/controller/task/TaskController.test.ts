@@ -1,8 +1,9 @@
 import { strict as assert } from "node:assert"
 import { afterEach, describe, it } from "mocha"
 import sinon from "sinon"
-import { TaskController } from "./TaskController"
+import * as taskDirectory from "@core/storage/taskDirectory"
 import { Logger } from "@/shared/services/Logger"
+import { TaskController } from "./TaskController"
 
 describe("TaskController task replacement", () => {
 	afterEach(() => sinon.restore())
@@ -23,6 +24,9 @@ describe("TaskController task replacement", () => {
 		} as any
 		const task = {
 			taskState: { pendingTaskReplacement: replacement },
+			get stateView() {
+				return this.taskState
+			},
 			getWorkingConfiguration: () => latestWorkingConfiguration,
 		} as any
 		controller.task = task
@@ -59,7 +63,12 @@ describe("TaskController task replacement", () => {
 	it("retains the approved replacement and surfaces replacement initialization failure", async () => {
 		const controller = createController()
 		const replacement = { context: "replacement context" }
-		const task = { taskState: { pendingTaskReplacement: replacement } } as any
+		const task = {
+			taskState: { pendingTaskReplacement: replacement },
+			get stateView() {
+				return this.taskState
+			},
+		} as any
 		controller.task = task
 		const initializationFailure = new Error("replacement initialization failed")
 		sinon.stub(controller, "initTask").rejects(initializationFailure)
@@ -73,7 +82,12 @@ describe("TaskController task replacement", () => {
 
 	it("propagates the old task failure when no replacement was approved", async () => {
 		const controller = createController()
-		const task = { taskState: { pendingTaskReplacement: undefined } } as any
+		const task = {
+			taskState: { pendingTaskReplacement: undefined },
+			get stateView() {
+				return this.taskState
+			},
+		} as any
 		controller.task = task
 		const oldTaskFailure = new Error("old task failed")
 
@@ -108,6 +122,9 @@ describe("TaskController task replacement", () => {
 		const task = {
 			taskId: "history-task",
 			taskState: { pendingTaskReplacement: undefined },
+			get stateView() {
+				return this.taskState
+			},
 			resumeTaskFromHistory: sinon.stub().callsFake((onRestored: () => void) => {
 				signalRestored = onRestored
 				return taskRun
@@ -140,6 +157,9 @@ describe("TaskController task replacement", () => {
 		const task = {
 			taskId: "broken-history-task",
 			taskState: { pendingTaskReplacement: undefined },
+			get stateView() {
+				return this.taskState
+			},
 			resumeTaskFromHistory: sinon.stub().rejects(failure),
 			abortTask: sinon.stub().resolves(),
 			retirePersistence: sinon.stub().resolves(),
@@ -163,6 +183,9 @@ describe("TaskController task replacement", () => {
 		const task = {
 			taskId: "invalid-operation-history-task",
 			taskState: { pendingTaskReplacement: undefined },
+			get stateView() {
+				return this.taskState
+			},
 			resumeTaskFromHistory: sinon.stub().resolves({
 				kind: "failed",
 				error: { name: "StorageReplayError", message: "Invalid operation record", stack },
@@ -191,6 +214,9 @@ describe("TaskController task replacement", () => {
 		const task = {
 			taskId: "stalled-history-task",
 			taskState: { pendingTaskReplacement: undefined },
+			get stateView() {
+				return this.taskState
+			},
 			resumeTaskFromHistory: sinon.stub().returns(new Promise<void>(() => {})),
 			abortTask: sinon.stub().resolves(),
 			retirePersistence: sinon.stub().resolves(),
@@ -216,6 +242,9 @@ describe("TaskController task replacement", () => {
 		const task = {
 			taskId: "replaced-history-task",
 			taskState: { pendingTaskReplacement: undefined },
+			get stateView() {
+				return this.taskState
+			},
 			resumeTaskFromHistory: sinon.stub().callsFake((onRestored: () => void) => {
 				signalRestored = onRestored
 				return taskRun
@@ -247,12 +276,18 @@ describe("TaskController task isolation", () => {
 		const oldTask = {
 			taskId: "old-task",
 			taskState: { isApiRequestActive: false },
+			get stateView() {
+				return this.taskState
+			},
 			abortTask: sinon.stub().returns(abortGate),
 			retirePersistence: sinon.stub().resolves(),
 		} as any
 		const newTask = {
 			taskId: "new-task",
 			taskState: { isApiRequestActive: false },
+			get stateView() {
+				return this.taskState
+			},
 			abortTask: sinon.stub().resolves(),
 			retirePersistence: sinon.stub().resolves(),
 		} as any
@@ -306,9 +341,32 @@ describe("TaskController task isolation", () => {
 		assert.equal(controller.task, newTask)
 	})
 
+	it("refuses a locked historical task before clearing the current task or loading settings", async () => {
+		sinon.stub(taskDirectory, "getTaskDirectoryPath").returns("/storage/tasks/locked-task")
+		const failure = new Error("This task is already open in another Dirac instance.")
+		const currentTask = { taskId: "current-task", abortTask: sinon.stub(), retirePersistence: sinon.stub() } as any
+		const stateManager = { loadTaskSettings: sinon.stub(), refreshModelProviderPresetsFromDisk: sinon.stub() } as any
+		const acquire = sinon.stub().rejects(failure)
+		const clearTaskSettings = sinon.stub()
+		const controller = new (TaskController as any)(
+			{ controller: {}, task: currentTask, stateManager, clearTaskSettings },
+			acquire,
+		) as TaskController
+
+		await assert.rejects(
+			() => controller.initTask(undefined, undefined, undefined, { id: "locked-task" } as any),
+			(error: unknown) => error === failure,
+		)
+		sinon.assert.calledOnceWithExactly(acquire, "/storage/tasks/locked-task")
+		sinon.assert.notCalled(clearTaskSettings)
+		sinon.assert.notCalled(currentTask.abortTask)
+		sinon.assert.notCalled(stateManager.loadTaskSettings)
+		assert.equal(controller.task, currentTask)
+	})
+
 	it("releases an acquired task lock when initialization fails", async () => {
-		const lockModule = require("../../task/TaskLockUtils")
-		const releaseTaskLock = sinon.stub(lockModule, "releaseTaskLock").resolves()
+		sinon.stub(taskDirectory, "getTaskDirectoryPath").returns("/storage/tasks/task")
+		const releaseTaskLock = sinon.stub().resolves()
 		const initializationFailure = new Error("settings failed")
 		const stateManager = {
 			refreshModelProviderPresetsFromDisk: sinon.stub(),
@@ -326,7 +384,7 @@ describe("TaskController task isolation", () => {
 				clearTaskSettings: sinon.stub().resolves(),
 				postStateToWebview: sinon.stub().resolves(),
 			},
-			sinon.stub().resolves({ acquired: true, skipped: false }),
+			sinon.stub().resolves(releaseTaskLock),
 			sinon.stub().resolves(workspaceManager),
 		) as TaskController
 
@@ -341,11 +399,11 @@ describe("TaskController task isolation", () => {
 	it("Dirac EXT releases the process-local task claim when initialization fails", async () => {
 		// A claim that outlived a failed init would refuse every later attempt to open that task in this
 		// window, with no way back for the user short of a reload.
-		const lockModule = require("../../task/TaskLockUtils")
-		sinon.stub(lockModule, "releaseTaskLock").resolves()
+		sinon.stub(taskDirectory, "getTaskDirectoryPath").returns("/storage/tasks/task")
 		const { openTasks } = require("../../task/OpenTaskRegistry")
 		openTasks.clear()
 		const initializationFailure = new Error("settings failed")
+		const releaseTaskLock = sinon.stub().resolves()
 		const stateManager = {
 			refreshModelProviderPresetsFromDisk: sinon.stub(),
 			getGlobalSettingsKey: sinon.stub().returns(undefined),
@@ -359,7 +417,7 @@ describe("TaskController task isolation", () => {
 				clearTaskSettings: sinon.stub().resolves(),
 				postStateToWebview: sinon.stub().resolves(),
 			},
-			sinon.stub().resolves({ acquired: true, skipped: false }),
+			sinon.stub().resolves(releaseTaskLock),
 			sinon.stub().resolves({ getPrimaryRoot: () => ({ path: "/workspace" }) }),
 		) as TaskController
 
@@ -369,9 +427,77 @@ describe("TaskController task isolation", () => {
 		)
 
 		assert.equal(openTasks.count(), 0)
+		sinon.assert.calledOnce(releaseTaskLock)
+	})
+
+	it("Dirac EXT releases the claim when the task lock cannot be acquired", async () => {
+		sinon.stub(taskDirectory, "getTaskDirectoryPath").returns("/storage/tasks/locked-task")
+		const { openTasks } = require("../../task/OpenTaskRegistry")
+		openTasks.clear()
+		const failure = new Error("This task is already open in another Dirac instance.")
+		const controller = new (TaskController as any)(
+			{ controller: { id: "ctrl-lock-fail" }, stateManager: {}, clearTaskSettings: sinon.stub() },
+			sinon.stub().rejects(failure),
+		) as TaskController
+
+		await assert.rejects(
+			() => controller.initTask(undefined, undefined, undefined, { id: "locked-task" } as any),
+			(error: unknown) => error === failure,
+		)
+		assert.equal(openTasks.ownerOf("locked-task"), undefined)
+	})
+
+	it("Dirac EXT holds the claim through same-ID reconstruction (clear first, then claim, then lock)", async () => {
+		// Upstream v0.5.22 reconstructs a task under its own id for follow-ups and clears the current
+		// writer first. The fork's clearTask() releases this controller's claim, so the claim must be
+		// taken AFTER that clear — otherwise the task would be re-initialised unclaimed and a second view
+		// could open it.
+		sinon.stub(taskDirectory, "getTaskDirectoryPath").returns("/storage/tasks/same-task")
+		const { openTasks } = require("../../task/OpenTaskRegistry")
+		openTasks.clear()
+		openTasks.claim("same-task", "ctrl-same")
+		const currentTask = { taskId: "same-task", abortTask: sinon.stub().resolves(), retirePersistence: sinon.stub().resolves() } as any
+		let ownerWhenLocking: string | undefined
+		const stop = new Error("stop after lock")
+		const acquire = sinon.stub().callsFake(async () => {
+			ownerWhenLocking = openTasks.ownerOf("same-task")
+			throw stop
+		})
+		const controller = new (TaskController as any)(
+			{ controller: { id: "ctrl-same" }, task: currentTask, stateManager: {}, clearTaskSettings: sinon.stub().resolves() },
+			acquire,
+		) as TaskController
+
+		await assert.rejects(
+			() => controller.initTask(undefined, undefined, undefined, { id: "same-task" } as any),
+			(error: unknown) => error === stop,
+		)
+		sinon.assert.calledOnce(currentTask.abortTask)
+		assert.equal(ownerWhenLocking, "ctrl-same")
+	})
+
+	it("Dirac EXT leaves the current task untouched when another view owns the requested task", async () => {
+		const { openTasks } = require("../../task/OpenTaskRegistry")
+		openTasks.clear()
+		openTasks.claim("theirs", "ctrl-other")
+		const currentTask = { taskId: "mine", abortTask: sinon.stub(), retirePersistence: sinon.stub() } as any
+		const acquire = sinon.stub()
+		const controller = new (TaskController as any)(
+			{ controller: { id: "ctrl-me" }, task: currentTask, stateManager: {}, clearTaskSettings: sinon.stub() },
+			acquire,
+		) as TaskController
+
+		const id = await controller.initTask(undefined, undefined, undefined, { id: "theirs" } as any)
+
+		assert.equal(id, "theirs")
+		sinon.assert.notCalled(acquire)
+		sinon.assert.notCalled(currentTask.abortTask)
+		assert.equal(controller.task, currentTask)
+		assert.equal(openTasks.ownerOf("theirs"), "ctrl-other")
 	})
 
 	it("captures task working configuration after persisted settings and runtime overrides", async () => {
+		sinon.stub(taskDirectory, "getTaskDirectoryPath").returns("/storage/tasks/task")
 		const order: string[] = []
 		const workingConfiguration = {
 			revision: 1,
@@ -404,7 +530,7 @@ describe("TaskController task isolation", () => {
 				clearTaskSettings: sinon.stub().resolves(),
 				postStateToWebview: sinon.stub().resolves(),
 			},
-			sinon.stub().resolves({ acquired: false, skipped: true }),
+			sinon.stub().resolves(sinon.stub().resolves()),
 			sinon.stub().resolves(workspaceManager),
 		) as TaskController
 
@@ -455,6 +581,9 @@ describe("TaskController task isolation", () => {
 		const task = {
 			taskId: historyItem.id,
 			taskState: { isApiRequestActive: false },
+			get stateView() {
+				return this.taskState
+			},
 			abortTask: sinon.stub().resolves(),
 			retirePersistence: sinon.stub().resolves(),
 			getWorkingConfiguration: () => latestWorkingConfiguration,
@@ -479,5 +608,68 @@ describe("TaskController task isolation", () => {
 		assert.equal(initTask.firstCall.args[3], historyItem)
 		assert.equal(initTask.firstCall.args[5], "conversation")
 		sinon.assert.calledOnce(postStateToWebview)
+	})
+})
+describe("TaskController follow-up readiness", () => {
+	afterEach(() => sinon.restore())
+
+	function taskAt(status: string, runOutcome?: object) {
+		return {
+			taskId: "persisted-task",
+			stateView: { status, runOutcome, didAttemptCompletion: false },
+		} as any
+	}
+
+	it("keeps live completed and restored cancelled tasks waiting on the same conversation", async () => {
+		const controller = new (TaskController as any)({}) as TaskController
+		const restore = sinon.stub(controller, "reinitExistingTaskFromId")
+		for (const status of ["completed", "cancelled", "awaiting_user_input"]) {
+			const task = taskAt(status)
+			controller.task = task
+			assert.equal(await controller.prepareTaskForFollowUp(), task)
+		}
+		sinon.assert.notCalled(restore)
+	})
+
+	it("waits for completion publication before accepting a live follow-up", async () => {
+		const clock = sinon.useFakeTimers()
+		const controller = new (TaskController as any)({}) as TaskController
+		const task = taskAt("executing_tool")
+		task.stateView.didAttemptCompletion = true
+		controller.task = task
+		let ready = false
+		const preparation = controller.prepareTaskForFollowUp().then(() => {
+			ready = true
+		})
+		await clock.tickAsync(10)
+		assert.equal(ready, false)
+		task.stateView.status = "completed"
+		await clock.tickAsync(10)
+		await preparation
+		assert.equal(ready, true)
+	})
+
+	it("restores ended runs using the same task ID and owning runtime", async () => {
+		const controller = new (TaskController as any)({}) as TaskController
+		const runtime = { runtimeConfigurationOverrides: { mode: "plan" } } as const
+		const restored = taskAt("cancelled")
+		const restore = sinon.stub(controller, "reinitExistingTaskFromId").callsFake(async () => {
+			controller.task = restored
+		})
+		for (const kind of ["completed", "failed", "cancelled", "interrupted"]) {
+			controller.task = taskAt("completed", { kind })
+			assert.equal(await controller.prepareTaskForFollowUp(runtime), restored)
+			sinon.assert.calledWithExactly(restore, "persisted-task", runtime)
+		}
+		assert.equal(restore.callCount, 4)
+	})
+
+	it("surfaces restoration failures instead of starting a fresh task", async () => {
+		const controller = new (TaskController as any)({}) as TaskController
+		controller.task = taskAt("idle", { kind: "failed" })
+		const initTask = sinon.stub(controller, "initTask")
+		sinon.stub(controller, "reinitExistingTaskFromId").rejects(new Error("history unreadable"))
+		await assert.rejects(controller.prepareTaskForFollowUp(), /history unreadable/)
+		sinon.assert.notCalled(initTask)
 	})
 })

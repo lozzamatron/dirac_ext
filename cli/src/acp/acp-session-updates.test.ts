@@ -409,6 +409,33 @@ describe("ACP session update journal", () => {
 		expect(() => isWellFormedJournal(committedPath)).not.toThrow()
 	})
 
+	it("leaves headroom so the next streaming chunk does not compact again", async () => {
+		const dataDirectory = process.env.DIRAC_DATA_DIR!
+		const sessionId = "headroom-session"
+		process.env.DIRAC_ACP_SESSION_UPDATES_MAX_BYTES = "2048"
+		const journal = await import("./acp-session-updates.js")
+
+		let retained = journal.getSessionUpdates(sessionId)
+		for (let index = 0; index < 100 && (retained[0]?.sequenceNumber ?? 1) === 1; index += 1) {
+			journal.recordSessionUpdate(sessionId, {
+				sessionUpdate: "agent_thought_chunk",
+				content: { type: "text", text: `chunk-${index}` },
+			} as any)
+			retained = journal.getSessionUpdates(sessionId)
+		}
+
+		expect(retained[0].sequenceNumber).toBeGreaterThan(1)
+		const oldestRetained = retained[0].sequenceNumber
+		const next = journal.recordSessionUpdate(sessionId, {
+			sessionUpdate: "agent_thought_chunk",
+			content: { type: "text", text: "next chunk" },
+		} as any)
+		const afterNext = journal.getSessionUpdates(sessionId)
+		expect(afterNext[0].sequenceNumber).toBe(oldestRetained)
+		expect(afterNext.at(-1)?.sequenceNumber).toBe(next._meta?.["dev.dirac/seq"])
+		expect(fs.statSync(journalFilePath(dataDirectory, sessionId)).size).toBeLessThanOrEqual(2048)
+	})
+
 	it("keeps a single entry whole even when it alone exceeds the budget", async () => {
 		const dataDirectory = process.env.DIRAC_DATA_DIR!
 		const sessionId = "single-overshoot-session"

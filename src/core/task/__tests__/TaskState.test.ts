@@ -31,7 +31,6 @@ describe("TaskState", () => {
 		assert.deepEqual(state.steeringMessages, [])
 		assert.deepEqual(state.availableSkills, [])
 		assert.deepEqual(state.activeSkillIds, [])
-		assert.equal(state.taskLockAcquired, false)
 		assert.equal(state.abort, false)
 		assert.ok(Number.isFinite(state.taskStartTimeMs))
 	})

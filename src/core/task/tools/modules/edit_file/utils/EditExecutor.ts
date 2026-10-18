@@ -44,7 +44,7 @@ export class EditExecutor {
 			}
 		}
 
-		const conflicts = this.findConflicts(resolvedEdits)
+		const conflicts = this.findConflicts(resolvedEdits, lines)
 		if (conflicts.size === 0) return { resolvedEdits, failedEdits }
 		for (const resolved of resolvedEdits) {
 			const messages = conflicts.get(resolved)
@@ -108,13 +108,13 @@ export class EditExecutor {
 		return { index }
 	}
 
-	private findConflicts(resolvedEdits: ResolvedEdit[]): Map<ResolvedEdit, string[]> {
+	private findConflicts(resolvedEdits: ResolvedEdit[], lines: string[]): Map<ResolvedEdit, string[]> {
 		const conflicts = new Map<ResolvedEdit, string[]>()
 		for (let leftIndex = 0; leftIndex < resolvedEdits.length; leftIndex++) {
 			for (let rightIndex = leftIndex + 1; rightIndex < resolvedEdits.length; rightIndex++) {
 				const left = resolvedEdits[leftIndex]
 				const right = resolvedEdits[rightIndex]
-				if (!this.editsConflict(left, right)) continue
+				if (!this.editsConflict(left, right, lines)) continue
 				this.addConflict(conflicts, left, `Overlaps files edit index ${right.editIndex}; neither conflicting edit was applied.`)
 				this.addConflict(conflicts, right, `Overlaps files edit index ${left.editIndex}; neither conflicting edit was applied.`)
 			}
@@ -128,19 +128,22 @@ export class EditExecutor {
 		conflicts.set(edit, messages)
 	}
 
-	private editsConflict(left: ResolvedEdit, right: ResolvedEdit): boolean {
+	private editsConflict(left: ResolvedEdit, right: ResolvedEdit, lines: string[]): boolean {
 		const leftReplace = left.edit.edit_type === "replace"
 		const rightReplace = right.edit.edit_type === "replace"
 		if (leftReplace && rightReplace) return left.lineIdx <= right.endIdx && right.lineIdx <= left.endIdx
-		if (!leftReplace && !rightReplace) return this.insertionBoundary(left) === this.insertionBoundary(right)
+		if (!leftReplace && !rightReplace) return this.insertionBoundary(left, lines) === this.insertionBoundary(right, lines)
 
 		const replacement = leftReplace ? left : right
 		const insertion = leftReplace ? right : left
 		return insertion.lineIdx >= replacement.lineIdx && insertion.lineIdx <= replacement.endIdx
 	}
 
-	private insertionBoundary(edit: ResolvedEdit): number {
-		return edit.edit.edit_type === "insert_after" ? edit.lineIdx + 1 : edit.lineIdx
+	private insertionBoundary(edit: ResolvedEdit, lines: string[]): number {
+		if (edit.edit.edit_type !== "insert_after") return edit.lineIdx
+		// The final empty line in a newline-terminated file is the EOF insertion point.
+		if (edit.lineIdx === lines.length - 1 && lines.length > 1 && lines[edit.lineIdx] === "") return edit.lineIdx
+		return edit.lineIdx + 1
 	}
 
 	applyEdits(
@@ -153,10 +156,15 @@ export class EditExecutor {
 		let removedCount = 0
 		const changes: Array<{ originalLineIdx: number; replacementCount: number; removedCount: number; edit: Edit }> = []
 
-		for (const { lineIdx, endIdx, edit } of sortedEdits) {
+		for (const resolved of sortedEdits) {
+			const { lineIdx, endIdx, edit } = resolved
 			const replacementLines = edit.text === "" ? [] : edit.text.split(/\r?\n/)
-			const spliceIndex = edit.edit_type === "insert_after" ? lineIdx + 1 : lineIdx
+			const spliceIndex = edit.edit_type === "replace" ? lineIdx : this.insertionBoundary(resolved, lines)
 			const removedInThisEdit = edit.edit_type === "replace" ? endIdx - lineIdx + 1 : 0
+			// A terminal newline separates text from the next source line; it is not an extra blank line.
+			if (edit.text.endsWith("\n") && spliceIndex + removedInThisEdit < newLines.length) {
+				replacementLines.pop()
+			}
 			newLines.splice(spliceIndex, removedInThisEdit, ...replacementLines)
 			addedCount += replacementLines.length
 			removedCount += removedInThisEdit

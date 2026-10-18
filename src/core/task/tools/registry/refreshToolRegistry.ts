@@ -32,7 +32,7 @@ export async function refreshToolRegistryForWorkspace<T>(
 
 		if (options.includeUserTools) {
 			const globalTools = await ToolDiscoveryService.scanGlobalUserTools()
-			const workspaceTools = options.workspaceRoot ? await ToolDiscoveryService.scanWorkspaceTools(options.workspaceRoot) : []
+			const workspaceTools = options.workspaceRoot ? await ToolDiscoveryService.scanWorkspaceTools(options.workspaceRoot, options.toggles) : []
 			const userTools: DiscoveredTool[] = [...globalTools, ...workspaceTools]
 			registry.reconcileWorkspaceUserTools(userTools, options.forceRefresh, options.workspaceRoot)
 			await UserToolLoader.purgeStaleCache(registry.getKnownUserToolIds())

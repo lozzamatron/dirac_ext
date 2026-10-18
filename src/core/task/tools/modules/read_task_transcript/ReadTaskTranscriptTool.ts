@@ -18,7 +18,8 @@ const MAXIMUM_TRANSCRIPT_LIMIT = 200
 export const read_task_transcript_spec: DiracToolSpec = {
 	id: "read_task_transcript",
 	name: "read_task_transcript",
-	description: "Read a bounded chronological page from one contained Task transcript.",
+	description:
+		"Read a chronological transcript page, capped at 32 KiB. Follow nextCursor for more. Oversized messages are returned as fragment.json slices; concatenate consecutive slices by messageIndex and offset to reconstruct the message JSON.",
 	parameters: [
 		{
 			name: "task_id",
@@ -58,8 +59,10 @@ export class ReadTaskTranscriptTool implements IDiracTool {
 		const limit = boundedLimit(args, DEFAULT_TRANSCRIPT_LIMIT, MAXIMUM_TRANSCRIPT_LIMIT)
 		const deadline = new ToolExecutionDeadline(this.spec().name)
 		try {
-			const result = await deadline.run(`reading transcript for ${taskId}`, async () =>
-				await requireGoalTrait(environment).readTaskTranscript({ taskId, cursor, limit }))
+			const result = await deadline.run(
+				`reading transcript for ${taskId}`,
+				async () => await requireGoalTrait(environment).readTaskTranscript({ taskId, cursor, limit }),
+			)
 			return goalToolJson(result)
 		} catch (error) {
 			if (error instanceof ToolTimeoutError) return await presentToolTimeout(environment, error)

@@ -11,9 +11,10 @@ import { toError } from "@/shared/errors"
 import { ChokidarWatcherCloser } from "@/shared/utils/ChokidarWatcherCloser"
 import { buildSubagentToolName } from "./SubagentToolName"
 
-/** Default Directory for agent configurations: ~/Documents/Dirac/Agents */
+/** Default Directory for agent configurations: ~/.dirac/Agents */
 export const AGENTS_CONFIG_DIRECTORY_NAME = "Agents"
 const SUBAGENT_DYNAMIC_TOOL_NAMESPACE = "subagent"
+const LEGACY_MIGRATION_MARKER = ".legacy-migration-complete"
 
 const AgentBaseConfigSchema = z.object({
 	name: z.string().trim().min(1),
@@ -34,7 +35,8 @@ const AgentConfigFrontmatterSchema = z.object({
 
 export type AgentBaseConfig = z.infer<typeof AgentBaseConfigSchema>
 
-function normalizeToolName(toolName: string): string[] {
+// Resolves legacy respond-tool aliases to `respond:<operation>`; unrelated to case normalization.
+function resolveToolAlias(toolName: string): string[] {
 	const trimmed = toolName.trim()
 	if (!trimmed) {
 		throw new Error("Tool name cannot be empty.")
@@ -53,7 +55,7 @@ function parseTools(tools: string | string[] | undefined): string[] {
 	if (rawTools.length === 0) {
 		return []
 	}
-	return Array.from(new Set(rawTools.flatMap(normalizeToolName)))
+	return Array.from(new Set(rawTools.flatMap(resolveToolAlias)))
 }
 
 function normalizeSkillName(skillName: string): string {
@@ -98,7 +100,19 @@ export function parseAgentConfigFromYaml(content: string): AgentBaseConfig {
 	}) as AgentBaseConfig
 }
 
+/**
+ * Resolves the agents configuration directory path.
+ * Defaults to ~/.dirac/Agents to avoid macOS ~/Documents TCC sandbox restrictions.
+ */
 export function getAgentsConfigPath(homeDir = os.homedir()): string {
+	const baseDir = process.env.DIRAC_DIR || path.join(homeDir, ".dirac")
+	return path.join(baseDir, AGENTS_CONFIG_DIRECTORY_NAME)
+}
+
+/**
+ * Returns the legacy ~/Documents/Dirac/Agents path used for backward-compatible migration.
+ */
+export function getLegacyAgentsConfigPath(homeDir = os.homedir()): string {
 	return path.join(homeDir, "Documents", "Dirac", AGENTS_CONFIG_DIRECTORY_NAME)
 }
 
@@ -110,8 +124,74 @@ function isYamlFile(filePath: string): boolean {
 	return /\.(yaml|yml)$/i.test(filePath)
 }
 
+function isExpectedMigrationError(error: unknown): boolean {
+	const code = (error as NodeJS.ErrnoException)?.code
+	return code === "ENOENT" || code === "EPERM" || code === "EACCES"
+}
+
+async function migrateLegacyAgentConfigs(legacyPath: string, newPath: string): Promise<void> {
+	const markerPath = path.join(newPath, LEGACY_MIGRATION_MARKER)
+	try {
+		await fs.access(markerPath)
+		return // migration already ran once for this profile
+	} catch {
+		// no marker yet — proceed with the one-time migration
+	}
+
+	let copyFailed = false
+	try {
+		const entries = await fs.readdir(legacyPath, { withFileTypes: true })
+		await fs.mkdir(newPath, { recursive: true })
+		await Promise.all(
+			entries
+				.filter((entry) => entry.isFile() && isYamlFile(entry.name))
+				.map(async (entry) => {
+					const src = path.join(legacyPath, entry.name)
+					const dest = path.join(newPath, entry.name)
+					try {
+						await fs.copyFile(src, dest, fs.constants.COPYFILE_EXCL)
+						Logger.debug(`[AgentConfigLoader] Migrated legacy agent config '${entry.name}' to ${dest}`)
+					} catch (copyErr) {
+						if ((copyErr as NodeJS.ErrnoException).code !== "EEXIST") {
+							copyFailed = true
+							Logger.warn(`[AgentConfigLoader] Failed to copy legacy agent config '${entry.name}': ${copyErr}`)
+						}
+					}
+				}),
+		)
+	} catch (error) {
+		if (!isExpectedMigrationError(error)) {
+			Logger.warn(`[AgentConfigLoader] Failed to read legacy agent configs from '${legacyPath}': ${error}`)
+			return
+		}
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+			// EPERM/EACCES never saw the source — leave the marker unwritten so a
+			// later run can migrate once the user grants filesystem access.
+			return
+		}
+		// ENOENT: nothing to migrate — still mark so a restored backup cannot resurrect configs.
+	}
+	// An incomplete copy must remain retryable on the next load.
+	if (copyFailed) return
+
+	// Written only after a completed enumeration (copies done or ENOENT) so a
+	// crash mid-migration still completes on the next run.
+	try {
+		await fs.mkdir(newPath, { recursive: true })
+		await fs.writeFile(markerPath, "", "utf8")
+	} catch (error) {
+		Logger.warn(`[AgentConfigLoader] Failed to write migration marker '${markerPath}': ${error}`)
+	}
+}
+
 export async function readAgentConfigsFromDisk(homeDir = os.homedir()): Promise<Map<string, AgentBaseConfig>> {
 	const agentsDirectoryPath = getAgentsConfigPath(homeDir)
+	// Only the default profile imports legacy configs — a custom DIRAC_DIR must never pull real-home files.
+	const isDefaultProfile = path.resolve(agentsDirectoryPath) === path.resolve(homeDir, ".dirac", AGENTS_CONFIG_DIRECTORY_NAME)
+	if (isDefaultProfile) {
+		const legacyDirectoryPath = getLegacyAgentsConfigPath(homeDir)
+		await migrateLegacyAgentConfigs(legacyDirectoryPath, agentsDirectoryPath)
+	}
 	const configs = new Map<string, AgentBaseConfig>()
 
 	try {
@@ -266,6 +346,7 @@ export class AgentConfigLoader {
 		}
 
 		try {
+			await fs.mkdir(this.directoryPath, { recursive: true })
 			const watcher = chokidar.watch(this.directoryPath, {
 				persistent: true,
 				ignoreInitial: true,
@@ -280,12 +361,22 @@ export class AgentConfigLoader {
 					if (this.watcher !== watcher) return
 					this.watcher = undefined
 					const watcherError = toError(error)
-					Logger.error("[AgentConfigLoader] Agent config live reload is disabled after watcher failure", watcherError)
+					const isPerm = (watcherError as any).code === "EPERM" || (watcherError as any).code === "EACCES"
+					if (isPerm) {
+						Logger.warn(
+							`[AgentConfigLoader] Agent config live reload is disabled due to missing filesystem permissions on '${this.directoryPath}'`,
+						)
+					} else {
+						Logger.error(
+							"[AgentConfigLoader] Agent config live reload is disabled after watcher failure",
+							watcherError,
+						)
+					}
 					this.notify(this.cachedConfigs, watcherError)
 					void this.watcherCloser
 						.close(watcher)
 						.catch((closeError) =>
-							Logger.error("[AgentConfigLoader] Failed to close disabled agent config watcher", closeError),
+							Logger.warn("[AgentConfigLoader] Failed to close disabled agent config watcher", closeError),
 						)
 				})
 				.on("add", (filePath) => {
@@ -309,7 +400,14 @@ export class AgentConfigLoader {
 		} catch (error) {
 			this.watcher = undefined
 			const watcherError = toError(error)
-			Logger.error("[AgentConfigLoader] Agent config live reload could not start and is disabled", watcherError)
+			const isPerm = (watcherError as any).code === "EPERM" || (watcherError as any).code === "EACCES"
+			if (isPerm) {
+				Logger.warn(
+					`[AgentConfigLoader] Agent config live reload could not start due to missing filesystem permissions on '${this.directoryPath}'`,
+				)
+			} else {
+				Logger.error("[AgentConfigLoader] Agent config live reload could not start and is disabled", watcherError)
+			}
 			this.notify(this.cachedConfigs, watcherError)
 		}
 	}

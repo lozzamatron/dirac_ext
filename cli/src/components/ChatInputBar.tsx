@@ -3,6 +3,7 @@ import React, { useMemo } from "react"
 import { Box, Text } from "ink"
 import { HighlightedInput } from "./HighlightedInput"
 import { createInputViewport } from "../utils/input-viewport"
+import { getInputContentWidth } from "../utils/input-layout"
 
 interface ChatInputBarProps {
 	borderColor: string
@@ -26,16 +27,12 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
 	terminalRows,
 }) => {
 	const MAX_INPUT_LINES = 10
-	const BORDER_OVERHEAD = 4 // border chars + padding
 
 	const maxInputHeight = Math.max(1, Math.min(MAX_INPUT_LINES, Math.floor((terminalRows ?? 24) / 2) - 2))
 
-	const contentWidth = Math.max(1, (terminalColumns ?? 80) - BORDER_OVERHEAD)
+	const contentWidth = getInputContentWidth(terminalColumns ?? 80, inputPrompt)
 
-	/**
-	 * Front-clip text so its wrapped visual line count fits within maxInputHeight.
-	 * Returns the clipped text and how many characters were removed from the front.
-	 */
+	/** Keep the cursor visible using the renderer's visual-row layout. */
 	const viewport = useMemo(() => {
 		return createInputViewport(textInput, cursorPos, contentWidth, maxInputHeight)
 	}, [textInput, cursorPos, contentWidth, maxInputHeight])
@@ -53,27 +50,30 @@ export const ChatInputBar: React.FC<ChatInputBarProps> = ({
 				maxHeight={maxInputHeight + 2}
 				overflow="hidden"
 				width="100%">
-				<Box>
-					{viewport.hasHiddenBefore && (
+				<Box width="100%">
+					<Box width={1} flexShrink={0}>
 						<Text color={theme.muted} dimColor>
-							↑ 
+							{viewport.hasHiddenBefore ? "↑" : " "}
 						</Text>
-					)}
+					</Box>
 					{inputPrompt && (
-						<Text color={borderColor} bold>
-							{inputPrompt}{" "}
-						</Text>
+						<Box flexShrink={0}>
+							<Text color={borderColor} bold>
+								{inputPrompt}{" "}
+							</Text>
+						</Box>
 					)}
 					<HighlightedInput
 						availableCommands={availableCommands}
+						columns={contentWidth}
 						cursorPos={viewport.cursorPosition}
 						text={viewport.text}
 					/>
-					{viewport.hasHiddenAfter && (
+					<Box width={1} flexShrink={0} justifyContent="flex-end" flexDirection="column">
 						<Text color={theme.muted} dimColor>
-							 ↓
+							{viewport.hasHiddenAfter ? "↓" : " "}
 						</Text>
-					)}
+					</Box>
 				</Box>
 			</Box>
 		</Box>

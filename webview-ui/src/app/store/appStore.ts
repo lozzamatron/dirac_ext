@@ -12,6 +12,7 @@ import { StateServiceClient, UiServiceClient } from "@/shared/api/grpc-client"
 interface AppState {
 	version: string
 	shouldShowAnnouncement: boolean
+	shouldShowUnbiasedWelcome: boolean
 	releaseNotes?: ReleaseNotesView
 	setShouldShowAnnouncement: (show: boolean) => void
 	onboardingModels?: any
@@ -66,6 +67,7 @@ export const useAppStore = create<AppState>((set) => ({
 	showAccount: false,
 	version: "0.0.0",
 	shouldShowAnnouncement: false,
+	shouldShowUnbiasedWelcome: false,
 	releaseNotes: undefined,
 	onboardingModels: undefined,
 	showWorktrees: false,
@@ -150,10 +152,11 @@ export const useAppStore = create<AppState>((set) => ({
 					? { shouldShowAnnouncement: parsedState.shouldShowAnnouncement }
 					: {}),
 				...(parsedState.releaseNotes !== undefined ? { releaseNotes: parsedState.releaseNotes } : {}),
-				...(parsedState.onboardingModels !== undefined ? { onboardingModels: parsedState.onboardingModels } : {}),
-				...(parsedState.welcomeViewCompleted !== undefined
-					? { showWelcome: !parsedState.welcomeViewCompleted }
+				...(parsedState.shouldShowUnbiasedWelcome !== undefined
+					? { shouldShowUnbiasedWelcome: parsedState.shouldShowUnbiasedWelcome }
 					: {}),
+				...(parsedState.onboardingModels !== undefined ? { onboardingModels: parsedState.onboardingModels } : {}),
+				...(parsedState.welcomeViewCompleted !== undefined ? { showWelcome: !parsedState.welcomeViewCompleted } : {}),
 			})
 			useSettingsStore.getState().setSettings(parsedState as any)
 			if (parsedState.taskHistory) useTaskStore.getState().setTaskHistory(parsedState.taskHistory)

@@ -93,9 +93,25 @@ function findExistingImagePath(
 	return fs.existsSync(candidate.resolvedPath) ? candidate : null
 }
 
+function removeImageReferences(input: string, references: Array<{ start: number; end: number }>): string {
+	let prompt = input
+	for (const { start, end } of references.sort((left, right) => right.start - left.start)) {
+		let left = start
+		let right = end
+		while (left > 0 && /[ \t]/.test(prompt[left - 1])) left--
+		while (right < prompt.length && /[ \t]/.test(prompt[right])) right++
+		const before = prompt[left - 1]
+		const after = prompt[right]
+		const separator = before && after && !/[\r\n]/.test(before + after) ? " " : ""
+		prompt = prompt.slice(0, left) + separator + prompt.slice(right)
+	}
+	return prompt
+}
+
 export function parseImagesFromInput(input: string, baseDirectory = process.cwd()): { prompt: string; imagePaths: string[] } {
 	const imagePaths: string[] = []
 	const resolvedImagePaths = new Set<string>()
+	const imageReferences: Array<{ start: number; end: number }> = []
 
 	// Match @path/to/image.ext patterns (with space or at start)
 	// Supports: @/workspace/path, @./rel/path, @path/to/file, @C:\path\to\file, @~/path
@@ -115,34 +131,29 @@ export function parseImagesFromInput(input: string, baseDirectory = process.cwd(
 		const p = match[1] || match[2] || match[3]
 		if (!p) continue
 		const candidate = findExistingImagePath(p, baseDirectory, true)
-		if (!candidate || resolvedImagePaths.has(candidate.resolvedPath)) continue
-		resolvedImagePaths.add(candidate.resolvedPath)
-		imagePaths.push(candidate.attachmentPath)
+		if (!candidate) continue
+		if (!resolvedImagePaths.has(candidate.resolvedPath)) {
+			resolvedImagePaths.add(candidate.resolvedPath)
+			imagePaths.push(candidate.attachmentPath)
+		}
+		imageReferences.push({ start: match.index, end: match.index + match[0].length })
 	}
 
 	while ((match = standalonePathPattern.exec(input)) !== null) {
 		const p = match[1] || match[2] || match[3]
 		if (!p) continue
 		const candidate = findExistingImagePath(p, baseDirectory, false)
-		if (!candidate || resolvedImagePaths.has(candidate.resolvedPath)) continue
-		resolvedImagePaths.add(candidate.resolvedPath)
-		imagePaths.push(candidate.attachmentPath)
+		if (!candidate) continue
+		if (!resolvedImagePaths.has(candidate.resolvedPath)) {
+			resolvedImagePaths.add(candidate.resolvedPath)
+			imagePaths.push(candidate.attachmentPath)
+		}
+		const prefixLength = /^[ \t\n\r\f\v]/.test(match[0]) ? 1 : 0
+		imageReferences.push({ start: match.index + prefixLength, end: match.index + match[0].length })
 	}
 
-	// Second pass: only remove paths from the prompt if they were successfully matched and exist
-	const prompt = input
-		.replace(atPathPattern, (match, p1, p2, p3) => {
-			const p = p1 || p2 || p3
-			return p && findExistingImagePath(p, baseDirectory, true) ? " " : match
-		})
-		.replace(standalonePathPattern, (match, p1, p2, p3) => {
-			const p = p1 || p2 || p3
-			// For standalone paths, we need to preserve the leading separator if it was part of the match
-			const prefix = match.match(/^[ \t\n\r\f\v]/) ? match[0] : ""
-			return p && findExistingImagePath(p, baseDirectory, false) ? prefix + " " : match
-		})
-		.replace(/[ \t]+/g, " ")
-		.trim()
+	// Preserve every unrelated byte, including indentation inside quoted code examples.
+	const prompt = removeImageReferences(input, imageReferences)
 
 	return { prompt, imagePaths }
 }

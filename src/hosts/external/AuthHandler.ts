@@ -63,73 +63,55 @@ export class AuthHandler {
 	}
 
 	private async createServer(preferredPort?: number): Promise<void> {
-		return new Promise(async (resolve, reject) => {
+		const server = http.createServer(this.handleRequest.bind(this))
+
+		// Build the port list: try preferred port first (if provided), then the normal range
+		const portsToTry = preferredPort ? [preferredPort, ...PORTS.filter((p) => p !== preferredPort)] : PORTS
+
+		// Try to bind on a port from the list
+		for (const port of portsToTry) {
 			try {
-				const server = http.createServer(this.handleRequest.bind(this))
+				await this.tryListenOnPort(server, port)
 
-				// Build the port list: try preferred port first (if provided), then the normal range
-				const portsToTry = preferredPort ? [preferredPort, ...PORTS.filter((p) => p !== preferredPort)] : PORTS
-
-				// Try to bind on a port from the list
-				for (const port of portsToTry) {
-					try {
-						await this.tryListenOnPort(server, port)
-
-						const address = server.address()
-						if (!address) {
-							Logger.error("AuthHandler: Failed to get server address")
-							this.server = null
-							this.port = 0
-							this.serverCreationPromise = null
-							reject(new Error("Failed to get server address"))
-							return
-						}
-
-						// Get the assigned port and set up the server
-						this.port = (address as AddressInfo).port
-						this.server = server
-						Logger.log("AuthHandler: Server started on port", this.port)
-						this.updateTimeout()
-						this.serverCreationPromise = null
-
-						// Attach a general error logger for visibility after successful bind
-						server.on("error", (error) => {
-							Logger.error("AuthHandler: Server error", error)
-						})
-
-						resolve()
-						return
-					} catch (error) {
-						const err = error as NodeJS.ErrnoException
-						if (err?.code === "EADDRINUSE") {
-							Logger.warn(`AuthHandler: Port ${port} in use, trying next...`)
-							continue
-						}
-						Logger.error("AuthHandler: Server error", error)
-						this.server = null
-						this.port = 0
-						this.serverCreationPromise = null
-						reject(error)
-						return
-					}
+				const address = server.address()
+				if (!address) {
+					Logger.error("AuthHandler: Failed to get server address")
+					server.close()
+					this.serverCreationPromise = null
+					throw new Error("Failed to get server address")
 				}
 
-				// If we reach here, all ports in the range are occupied
-				Logger.error(`AuthHandler: No available port in range ${PORT_RANGE_START}-${PORT_RANGE_END}`)
-				this.server = null
-				this.port = 0
+				// Get the assigned port and set up the server
+				this.port = (address as AddressInfo).port
+				this.server = server
+				Logger.log("AuthHandler: Server started on port", this.port)
+				this.updateTimeout()
 				this.serverCreationPromise = null
-				reject(
-					new Error(`No available port found for local auth callback (tried ${PORT_RANGE_START}-${PORT_RANGE_END}).`),
-				)
+
+				// Attach a general error logger for visibility after successful bind
+				server.on("error", (error) => {
+					Logger.error("AuthHandler: Server error", error)
+				})
+
+				return
 			} catch (error) {
-				Logger.error("AuthHandler: Failed to create server", error)
-				this.server = null
-				this.port = 0
+				const err = error as NodeJS.ErrnoException
+				if (err?.code === "EADDRINUSE") {
+					Logger.warn(`AuthHandler: Port ${port} in use, trying next...`)
+					continue
+				}
+				server.close()
+				Logger.error("AuthHandler: Server error", error)
 				this.serverCreationPromise = null
-				reject(error)
+				throw error
 			}
-		})
+		}
+
+		// If we reach here, all ports in the range are occupied
+		server.close()
+		Logger.error(`AuthHandler: No available port in range ${PORT_RANGE_START}-${PORT_RANGE_END}`)
+		this.serverCreationPromise = null
+		throw new Error(`No available port found for local auth callback (tried ${PORT_RANGE_START}-${PORT_RANGE_END}).`)
 	}
 
 	private tryListenOnPort(server: Server, port: number): Promise<void> {
@@ -162,11 +144,37 @@ export class AuthHandler {
 			return
 		}
 
+		// Only accept exact paths SharedUriHandler can route. Prefix matching would
+		// let /callback/../x or /authxyz through, and allowing unhandled paths means
+		// a stray probe tears down the listener instead of getting a 404.
+		const ALLOWED_CALLBACK_PATHS = new Set(["/openrouter", "/requesty", "/task"])
+		let pathname: string
+		try {
+			pathname = new URL(req.url, "http://127.0.0.1").pathname
+		} catch {
+			pathname = ""
+		}
+		if (!ALLOWED_CALLBACK_PATHS.has(pathname)) {
+			Logger.warn(`AuthHandler: Rejecting unexpected path: ${pathname || req.url}`)
+			this.sendResponse(res, 404, "text/plain", "Not found")
+			return
+		}
+
+		// Lifecycle: the listener stays up for non-callback probes (404 above) and is
+		// torn down after the first actual auth attempt — success, malformed callback,
+		// or processing error — so the callback port is not left open indefinitely.
+		// SERVER_TIMEOUT is the backstop for the no-callback case.
 		try {
 			const fullUrl = `http://127.0.0.1:${this.port}${req.url}`
 
 			// Use SharedUriHandler directly - it handles all validation and processing
 			const success = await SharedUriHandler.handleUri(fullUrl)
+
+			if (!success) {
+				this.sendResponse(res, 400, "text/plain", "Bad request")
+				this.stop()
+				return
+			}
 
 			// Try to get redirect URI, but don't fail if not implemented (CLI/JetBrains)
 			let redirectUri: string | undefined
@@ -180,19 +188,14 @@ export class AuthHandler {
 			}
 
 			const html = createAuthSucceededHtml(redirectUri)
-
-			if (success) {
-				this.sendResponse(res, 200, "text/html", html)
-			} else {
-				this.sendResponse(res, 400, "text/plain", "Bad request")
-			}
+			this.sendResponse(res, 200, "text/html", html)
 		} catch (error) {
 			Logger.error("AuthHandler: Error processing request", error)
 			this.sendResponse(res, 400, "text/plain", "Bad request")
-		} finally {
-			// Stop the server after handling any request (success or failure)
-			this.stop()
 		}
+
+		// Auth attempt finished (success or error); stop the callback listener
+		this.stop()
 	}
 
 	private sendResponse(res: ServerResponse, status: number, type: string, content: string): void {

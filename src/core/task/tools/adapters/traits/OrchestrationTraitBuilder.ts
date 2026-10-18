@@ -1,5 +1,6 @@
 import type { Hooks } from "@core/hooks/hook-factory"
 import { activateTaskSkill } from "@core/task/activateTaskSkill"
+import { getCurrentTurnUserRequests } from "@core/text-condensation/CurrentTurnUserRequests"
 import { getConfiguredUtilityModelSelection } from "@core/utility-model/UtilityModelSelection"
 import type { DiracMessage } from "@shared/ExtensionMessage"
 import { Logger } from "@shared/services/Logger"
@@ -42,13 +43,29 @@ export function buildOrchestrationTrait(config: TaskConfig): IOrchestrationTrait
 				agentIdentity,
 				recorder,
 			})
+			const signal = options?.signal
+			const onAbort = () => {
+				void runner.abort(signal?.reason ? `Aborted: ${String(signal.reason)}` : "Aborted by external signal")
+			}
+			if (signal) {
+				if (signal.aborted) {
+					await runner.abort("Aborted by external signal")
+				} else {
+					signal.addEventListener("abort", onAbort, { once: true })
+				}
+			}
+
 			const usage = new SubagentUsagePublisher(config.messageState, config.callbacks.postStateToWebview, agentIdentity.name)
-			const result = await runner.run(prompt, async (update) => {
-				if (update.stats) await usage.update(update.stats)
-				await options?.onUpdate?.(update)
-			}, options?.timeout, options?.includeHistory)
-			await usage.finish(result.stats)
-			return result
+			try {
+				const result = await runner.run(prompt, async (update) => {
+					if (update.stats) await usage.update(update.stats)
+					await options?.onUpdate?.(update)
+				}, options?.timeout, options?.includeHistory)
+				await usage.finish(result.stats)
+				return result
+			} finally {
+				signal?.removeEventListener("abort", onAbort)
+			}
 		},
 		runHook: async (name, input, options) => {
 			const { executeHook } = await import("@core/hooks/hook-executor")
@@ -69,6 +86,7 @@ export function buildOrchestrationTrait(config: TaskConfig): IOrchestrationTrait
 		saveCheckpoint: (isTaskComplete, messageTs) => config.callbacks.saveCheckpoint(isTaskComplete, messageTs),
 		commitAttemptCompletion: (response) => config.callbacks.commitAttemptCompletion(response),
 		getHistory: () => config.messageState.getDiracMessages(),
+		getCurrentTurnUserRequests: () => getCurrentTurnUserRequests(config.messageState.getDiracMessages()),
 		setTruncationRange: (range) => {
 			config.taskState.conversationHistoryDeletedRange = range
 		},
@@ -82,6 +100,7 @@ export function buildOrchestrationTrait(config: TaskConfig): IOrchestrationTrait
 		setTaskState: (key, value) => {
 			config.taskState[key] = value
 		},
+		commitCompletionResponse: (response) => config.taskState.commitCompletionResponse(response),
 		requestTaskReplacement: (context, images, files) => {
 			config.taskState.pendingTaskReplacement = { context, images, files }
 			config.taskState.abort = true

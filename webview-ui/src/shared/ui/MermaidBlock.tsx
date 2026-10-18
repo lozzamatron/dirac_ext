@@ -117,7 +117,7 @@ export default function MermaidBlock({ code }: MermaidBlockProps) {
 
 	const handleCopyCode = async () => {
 		try {
-			await navigator.clipboard.writeText(code)
+			await FileServiceClient.copyToClipboard(StringRequest.create({ value: code }))
 		} catch (error) {
 			console.error("Copy failed", error)
 		}

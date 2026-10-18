@@ -57,6 +57,7 @@ export function getConfiguredProviders(
 	if (apiConfiguration.deepSeekApiKey) {
 		configured.push("deepseek")
 	}
+	if (apiConfiguration.unbiasedApiKey) configured.push("unbiased")
 
 	// xAI - requires API key
 	if (apiConfiguration.xaiApiKey) {

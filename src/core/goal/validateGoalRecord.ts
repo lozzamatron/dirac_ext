@@ -8,7 +8,7 @@ const GOAL_STATUSES = new Set(["working", "waiting", "paused", "blocked", "achie
 const CHILD_ROLES = new Set(["task", "verification"])
 const CHILD_STATUSES = new Set(["starting", "running", "waiting", "completed", "failed", "cancelled", "interrupted"])
 const INTERACTION_KINDS = new Set(["approval", "feedback", "action"])
-const EVENT_KINDS = new Set(["task_response", "task_interaction", "task_failed", "user_steering"])
+const EVENT_KINDS = new Set(["task_response", "task_interaction", "task_failed", "task_finished", "user_steering"])
 const CARD_KINDS = new Set(["generic", "task_completion", "resume_task", "resume_completed_task"])
 const CARD_STATUSES = new Set([
 	"building",

@@ -64,6 +64,17 @@ export const OpenAICompatibleProvider = ({ showModelOptions, isPopup, currentMod
 	const profiles = apiConfiguration?.openAiCompatibleProfiles || []
 	const currentProfile = profiles.find((p: OpenAiCompatibleProfile) => p.name === currentProfileName)
 
+	const persistOpenAiHeaders = (headers: Record<string, string>) => {
+		if (!currentProfileName || !currentProfile) return handleFieldChange("openAiHeaders", headers)
+
+		return handleFieldsChange({
+			openAiHeaders: headers,
+			openAiCompatibleProfiles: profiles.map((profile: OpenAiCompatibleProfile) =>
+				profile.name === currentProfileName ? { ...profile, headers } : profile,
+			),
+		})
+	}
+
 	const handleProfileChange = async (e: any) => {
 		const name = e.target.value
 		if (name === "manual" || name === "new") {
@@ -330,7 +341,7 @@ export const OpenAICompatibleProvider = ({ showModelOptions, isPopup, currentMod
 										const headerCount = Object.keys(currentHeaders).length
 										const newKey = `header${headerCount + 1}`
 										currentHeaders[newKey] = ""
-										handleFieldChange("openAiHeaders", currentHeaders)
+										persistOpenAiHeaders(currentHeaders)
 									}}>
 									Add Header
 								</VSCodeButton>
@@ -346,7 +357,7 @@ export const OpenAICompatibleProvider = ({ showModelOptions, isPopup, currentMod
 												const currentHeaders = apiConfiguration?.openAiHeaders ?? {}
 												if (newValue && newValue !== key) {
 													const { [key]: _, ...rest } = currentHeaders
-													handleFieldChange("openAiHeaders", {
+													persistOpenAiHeaders({
 														...rest,
 														[newValue]: value,
 													})
@@ -359,7 +370,7 @@ export const OpenAICompatibleProvider = ({ showModelOptions, isPopup, currentMod
 											disabled={remoteConfigSettings?.openAiHeaders !== undefined}
 											initialValue={value as string}
 											onChange={(newValue: string) => {
-												handleFieldChange("openAiHeaders", {
+												persistOpenAiHeaders({
 													...(apiConfiguration?.openAiHeaders ?? {}),
 													[key]: newValue,
 												})
@@ -372,7 +383,7 @@ export const OpenAICompatibleProvider = ({ showModelOptions, isPopup, currentMod
 											disabled={remoteConfigSettings?.openAiHeaders !== undefined}
 											onClick={() => {
 												const { [key]: _, ...rest } = apiConfiguration?.openAiHeaders ?? {}
-												handleFieldChange("openAiHeaders", rest)
+												persistOpenAiHeaders(rest)
 											}}>
 											Remove
 										</VSCodeButton>

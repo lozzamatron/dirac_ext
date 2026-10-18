@@ -6,7 +6,7 @@ import type { IToolEnvironment } from "../../interfaces/IToolEnvironment"
 export const wait_for_goal_events_spec: DiracToolSpec = {
 	id: "wait_for_goal_events",
 	name: "wait_for_goal_events",
-	description: "Wait for the next ordered Goal event batch or the runtime heartbeat.",
+	description: "Wait for the next ordered Goal event batch or a configured intervention deadline.",
 }
 
 export class WaitForGoalEventsTool implements IDiracTool {

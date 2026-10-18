@@ -19,6 +19,8 @@ import {
 	claudeCodeModels,
 	deepSeekDefaultModelId,
 	deepSeekModels,
+	unbiasedDefaultModelId,
+	unbiasedModels,
 	doubaoDefaultModelId,
 	doubaoModels,
 	fireworksDefaultModelId,
@@ -61,9 +63,9 @@ import {
 	wandbModels,
 	xaiDefaultModelId,
 	xaiModels,
-} from "@/shared/api"
-import { getProviderDefaultModelId } from "@/shared/storage/provider-keys"
-import { usesOpenRouterModels } from "./openrouter-models"
+} from "@/shared/api";
+import { getProviderDefaultModelId } from "@/shared/storage/provider-keys";
+import { usesOpenRouterModels } from "./openrouter-models";
 
 export const providerModels: Record<string, { models: Record<string, unknown>; defaultId: string }> = {
 	anthropic: { models: anthropicModels, defaultId: anthropicDefaultModelId },
@@ -72,6 +74,7 @@ export const providerModels: Record<string, { models: Record<string, unknown>; d
 	cerebras: { models: cerebrasModels, defaultId: cerebrasDefaultModelId },
 	"claude-code": { models: claudeCodeModels, defaultId: claudeCodeDefaultModelId },
 	deepseek: { models: deepSeekModels, defaultId: deepSeekDefaultModelId },
+	unbiased: { models: unbiasedModels, defaultId: unbiasedDefaultModelId },
 	doubao: { models: doubaoModels, defaultId: doubaoDefaultModelId },
 	fireworks: { models: fireworksModels, defaultId: fireworksDefaultModelId },
 	gemini: { models: geminiModels, defaultId: geminiDefaultModelId },
@@ -111,5 +114,10 @@ export function getDefaultModelId(provider: string): string {
 
 export function getModelList(provider: string): string[] {
 	if (!hasStaticModels(provider)) return []
+	if (provider === "huggingface") {
+		return Object.entries(huggingFaceModels)
+			.filter(([, info]) => info.supportsTools)
+			.map(([id]) => id)
+	}
 	return Object.keys(providerModels[provider].models)
 }

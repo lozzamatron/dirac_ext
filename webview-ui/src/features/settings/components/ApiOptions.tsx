@@ -18,6 +18,7 @@ import { BedrockProvider } from "./providers/BedrockProvider"
 import { CerebrasProvider } from "./providers/CerebrasProvider"
 import { ClaudeCodeProvider } from "./providers/ClaudeCodeProvider"
 import { DeepSeekProvider } from "./providers/DeepSeekProvider"
+import { UnbiasedProvider } from "./providers/UnbiasedProvider"
 import { DifyProvider } from "./providers/DifyProvider"
 import { DoubaoProvider } from "./providers/DoubaoProvider"
 import { FireworksProvider } from "./providers/FireworksProvider"
@@ -410,6 +411,10 @@ const ApiOptions = ({ showModelOptions, apiErrorMessage, modelIdErrorMessage, is
 
 			{apiConfiguration && selectedProvider === "deepseek" && (
 				<DeepSeekProvider currentMode={currentMode} isPopup={isPopup} showModelOptions={showModelOptions} />
+			)}
+
+			{apiConfiguration && selectedProvider === "unbiased" && (
+				<UnbiasedProvider currentMode={currentMode} isPopup={isPopup} showModelOptions={showModelOptions} />
 			)}
 
 			{apiConfiguration && selectedProvider === "together" && (

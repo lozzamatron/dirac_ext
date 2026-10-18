@@ -184,10 +184,11 @@ export class OpenAiHandler implements ApiHandler {
 			}
 		}
 
-		const requestedEffort = normalizeOpenaiReasoningEffort(this.options.reasoningEffort)
-		if (requestedEffort !== "none") {
-			reasoningEffort = requestedEffort as ChatCompletionReasoningEffort
-		}
+		// "none" is a first-class ReasoningEffort value in the OpenAI SDK, so send it rather than
+		// omitting the field: omitting lets the server apply its own default, which for several
+		// local backends (Ollama with a qwen3 tag, for one) means reasoning stays ON. Selecting
+		// "none" in Settings must actually turn reasoning off.
+		reasoningEffort = normalizeOpenaiReasoningEffort(this.options.reasoningEffort) as ChatCompletionReasoningEffort
 
 		if (isReasoningModelFamily) {
 			openAiMessages = [
@@ -231,6 +232,15 @@ export class OpenAiHandler implements ApiHandler {
 				yield {
 					type: "reasoning",
 					reasoning: (delta.reasoning_content as string | undefined) || "",
+				}
+			}
+
+			// Ollama's OpenAI-compatible endpoint streams the thinking trace as `delta.reasoning`,
+			// not `reasoning_content`. Matches the openrouter/baseten/wandb/vercel handlers.
+			if (delta && "reasoning" in delta && delta.reasoning) {
+				yield {
+					type: "reasoning",
+					reasoning: typeof delta.reasoning === "string" ? delta.reasoning : JSON.stringify(delta.reasoning),
 				}
 			}
 

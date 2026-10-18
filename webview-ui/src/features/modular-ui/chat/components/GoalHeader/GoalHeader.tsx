@@ -12,7 +12,6 @@ import {
 } from "lucide-react"
 import { useCallback, useId, useMemo, useRef, useState } from "react"
 import { GoalServiceClient } from "@/shared/api/grpc-client"
-import MarkdownBlock from "@/shared/ui/MarkdownBlock"
 import { formatLargeNumber } from "@/shared/lib/format"
 import { Badge } from "@/shared/ui/badge"
 import { Button } from "@/shared/ui/button"
@@ -25,6 +24,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/shared/ui/dialog"
+import MarkdownBlock from "@/shared/ui/MarkdownBlock"
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover"
 
 type GoalAction = "resume" | "pause" | "stop"
@@ -130,8 +130,9 @@ const GoalHeader = ({ goal }: GoalHeaderProps) => {
 	const objectivePreview = useMemo(() => plainTextObjective(goal.objective.markdown), [goal.objective.markdown])
 	const taskChildren = useMemo(() => goal.children.filter((child) => child.role === "task"), [goal.children])
 	const pendingChildren = useMemo(() => goal.children.filter((child) => child.pendingInteraction), [goal.children])
-	const canResume = goal.status === "paused" || goal.status === "blocked"
-	const canPause = goal.status === "working" || goal.status === "waiting"
+	const activeStatus = goal.status === "working" || goal.status === "waiting"
+	const canResume = goal.status === "paused" || goal.status === "blocked" || (activeStatus && goal.hasLocalExecution === false)
+	const canPause = activeStatus && goal.hasLocalExecution !== false
 	const canStop = goal.status !== "achieved" && goal.status !== "stopped"
 
 	const runControl = useCallback(

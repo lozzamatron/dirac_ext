@@ -1,6 +1,8 @@
 import { cn } from "@heroui/react"
+import { StringRequest } from "@shared/proto/dirac/common"
 import { CheckIcon, CopyIcon } from "lucide-react"
 import { useCallback, useState } from "react"
+import { FileServiceClient } from "@/shared/api/grpc-client"
 import { Button } from "@/shared/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip"
 
@@ -10,15 +12,17 @@ const CopyTaskButton: React.FC<{
 }> = ({ taskText, className }) => {
 	const [copied, setCopied] = useState(false)
 
-	const handleCopy = useCallback(() => {
-		if (!taskText) {
-			return
-		}
+	const handleCopy = useCallback(async () => {
+		if (!taskText) return
 
-		navigator.clipboard.writeText(taskText).then(() => {
+		try {
+			await FileServiceClient.copyToClipboard(StringRequest.create({ value: taskText }))
 			setCopied(true)
 			setTimeout(() => setCopied(false), 1500)
-		})
+		} catch (error) {
+			setCopied(false)
+			console.error("Copy failed", error)
+		}
 	}, [taskText])
 
 	return (

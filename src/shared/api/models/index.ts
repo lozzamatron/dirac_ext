@@ -7,6 +7,7 @@ export {
 	type AnthropicModelId,
 	anthropicDefaultModelId,
 	anthropicModels,
+	getAnthropicReasoningEffort,
 	isAnthropicAdaptiveThinkingSupported,
 } from "./anthropic"
 // Baseten
@@ -19,6 +20,7 @@ export { type CerebrasModelId, cerebrasDefaultModelId, cerebrasModels } from "./
 export { type ClaudeCodeModelId, claudeCodeDefaultModelId, claudeCodeModels } from "./claude-code"
 // DeepSeek
 export { type DeepSeekModelId, deepSeekDefaultModelId, deepSeekModels } from "./deepseek"
+export { unbiasedDefaultModelId, unbiasedModels } from "./unbiased"
 // Doubao
 export { type DoubaoModelId, doubaoDefaultModelId, doubaoModels } from "./doubao"
 // Fireworks

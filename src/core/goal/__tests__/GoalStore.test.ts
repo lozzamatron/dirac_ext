@@ -1,9 +1,9 @@
-import { setVscodeHostProviderMock } from "@/test/host-provider-test-utils"
 import assert from "node:assert/strict"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { afterEach, beforeEach, describe, it } from "mocha"
+import { setVscodeHostProviderMock } from "@/test/host-provider-test-utils"
 import { GoalStore } from "../GoalStore"
 
 describe("GoalStore discovery", () => {
@@ -29,7 +29,7 @@ describe("GoalStore discovery", () => {
 		}
 		await fs.writeFile(path.join(legacyDirectory, "goal.json"), JSON.stringify(legacyRecord))
 
-		assert.deepEqual(await new GoalStore().reconcileOnStartup(), { records: [], failures: [] })
+		assert.deepEqual(await new GoalStore().scanRecords(), { records: [], failures: [] })
 		assert.deepEqual(JSON.parse(await fs.readFile(path.join(legacyDirectory, "goal.json"), "utf8")), legacyRecord)
 	})
 
@@ -38,7 +38,7 @@ describe("GoalStore discovery", () => {
 		await fs.mkdir(invalidDirectory, { recursive: true })
 		await fs.writeFile(path.join(invalidDirectory, "goal.json"), JSON.stringify({ version: 1 }))
 
-		const report = await new GoalStore().reconcileOnStartup()
+		const report = await new GoalStore().scanRecords()
 		assert.deepEqual(report.records, [])
 		assert.equal(report.failures.length, 1)
 		assert.equal(report.failures[0].goalId, "current-goal")

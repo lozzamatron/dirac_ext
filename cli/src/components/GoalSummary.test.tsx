@@ -110,6 +110,14 @@ describe("GoalSummary", () => {
 		expect(capturedInput.options?.isActive).toBe(false)
 	})
 
+	it("offers ownership-checked resume for an active record with no local execution", () => {
+		const goal = { ...goalWithOlderChildren(), hasLocalExecution: false }
+		const frame = renderSummary(goal).lastFrame() ?? ""
+		expect(frame).toContain("WORKING")
+		expect(frame).toContain("Ctrl+R Resume here")
+		expect(frame).not.toContain("Ctrl+P Pause")
+	})
+
 	it("pages expanded children from active and recent work to the oldest child", async () => {
 		const onPageNavigation = vi.fn()
 		const view = renderSummary(goalWithOlderChildren(), true, false, onPageNavigation)

@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "version": "0.5.21",
+  "kind": "patch",
+  "announce": true,
+  "sourceTag": "v0.5.20",
+  "analyzedCommit": "0cf658715827f8d87d67ccccb03302968072b09a",
+  "headline": "Updates and improvements",
+  "highlights": [
+    {
+      "id": "feat-0cf65871",
+      "title": "add Ctrl+Up/Down prompt history recall guidance",
+      "category": "feat",
+      "evidence": [
+        "0cf658715827f8d87d67ccccb03302968072b09a"
+      ]
+    },
+    {
+      "id": "feat-b58de3de",
+      "title": "add Gemini 4 Argon and make it the default",
+      "category": "feat",
+      "evidence": [
+        "b58de3de75cb386cfcabdc0f1bacb3df6b55ccb7"
+      ]
+    },
+    {
+      "id": "feat-3f9fd9d0",
+      "title": "add Vim prompt editing",
+      "category": "feat",
+      "evidence": [
+        "3f9fd9d03841888c2ac2fcb846c11e2c9c089ae7"
+      ]
+    }
+  ]
+}

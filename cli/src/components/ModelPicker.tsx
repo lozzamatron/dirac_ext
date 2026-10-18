@@ -1,7 +1,7 @@
 import { theme } from "../constants/theme"
 /**
  * Model picker component for model selection
- * Supports static model lists and async loading for OpenRouter
+ * Supports static model lists and dynamic provider catalogs
  */
 
 import { Box, Text } from "ink"
@@ -9,6 +9,7 @@ import Spinner from "ink-spinner"
 import React, { useEffect, useMemo, useState } from "react"
 import { refreshOpenRouterModels } from "@/core/controller/models/refreshOpenRouterModels"
 import { refreshGithubCopilotModels } from "@/core/controller/models/refreshGithubCopilotModels"
+import { getHuggingFaceModels } from "@/core/controller/models/refreshHuggingFaceModels"
 import { type ApiProvider } from "@/shared/api"
 import { filterOpenRouterModelIds } from "@/shared/utils/model-filters"
 import { COLORS } from "../constants/colors"
@@ -35,11 +36,12 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({ provider, controller, 
 	const [asyncModels, setAsyncModels] = useState<string[]>([])
 	const [loadError, setLoadError] = useState<string | null>(null)
 
-	// Fetch async models (OpenRouter) when needed
+	// Fetch dynamic models when needed
 	useEffect(() => {
 		const loadsOpenRouterModels = usesOpenRouterModels(provider)
 		const loadsGithubModels = provider === "github-copilot"
-		if (!loadsOpenRouterModels && !loadsGithubModels) {
+		const loadsHuggingFaceModels = provider === "huggingface"
+		if (!loadsOpenRouterModels && !loadsGithubModels && !loadsHuggingFaceModels) {
 			setAsyncModels([])
 			setLoadError(null)
 			setIsLoading(false)
@@ -51,7 +53,11 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({ provider, controller, 
 		setLoadError(null)
 		setIsLoading(true)
 
-		const loadModels = loadsOpenRouterModels ? refreshOpenRouterModels(controller) : refreshGithubCopilotModels()
+		const loadModels = loadsOpenRouterModels
+			? refreshOpenRouterModels(controller)
+			: loadsHuggingFaceModels
+				? getHuggingFaceModels()
+				: refreshGithubCopilotModels()
 		loadModels.then(
 			(models) => {
 				if (cancelled) return
@@ -78,9 +84,8 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({ provider, controller, 
 	}, [provider, controller])
 
 	const modelList = useMemo(() => {
-		if (usesOpenRouterModels(provider) || provider === "github-copilot") {
-			return asyncModels
-		}
+		if (provider === "huggingface") return asyncModels.length ? asyncModels : getModelList(provider)
+		if (usesOpenRouterModels(provider) || provider === "github-copilot") return asyncModels
 		return getModelList(provider)
 	}, [provider, asyncModels])
 
@@ -120,13 +125,19 @@ export const ModelPicker: React.FC<ModelPickerProps> = ({ provider, controller, 
 		)
 	}
 
-	if (loadError && !supportsCustomModel) {
+	if (loadError && !supportsCustomModel && provider !== "huggingface") {
 		return <Text color={theme.error}>Could not load models: {loadError}</Text>
 	}
 
 	return (
 		<Box flexDirection="column">
-			{loadError && <Text color={theme.warning}>Model list unavailable; enter a custom model ID.</Text>}
+			{loadError && (
+				<Text color={theme.warning}>
+					{provider === "huggingface"
+						? "Model list unavailable; showing fallback models."
+						: "Model list unavailable; enter a custom model ID."}
+				</Text>
+			)}
 			<SearchableList
 				isActive={isActive}
 				items={items}

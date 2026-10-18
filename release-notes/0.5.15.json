@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "version": "0.5.15",
+  "kind": "patch",
+  "announce": true,
+  "sourceTag": "v0.5.14",
+  "analyzedCommit": "031042d7ead42f1d0dc45f2dffaad988ef356279",
+  "headline": "Updates and improvements",
+  "highlights": [
+    {
+      "id": "feat-ab25bb52",
+      "title": "execute workspace hooks from approved snapshots",
+      "category": "feat",
+      "evidence": [
+        "ab25bb52278d5810eeed410599c0d706c8fd938c"
+      ]
+    },
+    {
+      "id": "feat-fcc194d3",
+      "title": "prompt users before opening GitHub verification URL",
+      "category": "feat",
+      "evidence": [
+        "fcc194d38da9ab4cbd26cc2e20447bf353dbecb0"
+      ]
+    },
+    {
+      "id": "feat-964e24e4",
+      "title": "support dynamic Hugging Face models in session selection",
+      "category": "feat",
+      "evidence": [
+        "964e24e4faca029d688dbeb337247efc911c538d"
+      ]
+    },
+    {
+      "id": "fix-77e72a2d",
+      "title": "retain headroom when compacting session journals",
+      "category": "fix",
+      "evidence": [
+        "77e72a2d71a72c6adaf3e42d6cda6af4f3279ed6"
+      ]
+    },
+    {
+      "id": "fix-e0924ec9",
+      "title": "copy button",
+      "category": "fix",
+      "evidence": [
+        "e0924ec9eca9bb51191d532ebafd5a85745461c5"
+      ]
+    }
+  ]
+}

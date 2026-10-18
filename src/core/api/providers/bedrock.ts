@@ -11,6 +11,7 @@ import {
 	type BedrockModelId,
 	bedrockDefaultModelId,
 	bedrockModels,
+	getAnthropicReasoningEffort,
 	isAnthropicAdaptiveThinkingSupported,
 	type ModelInfo,
 } from "@shared/api"
@@ -505,7 +506,7 @@ export class AwsBedrockHandler implements ApiHandler {
 
 		// Get thinking configuration
 		const budget_tokens = this.options.thinkingBudgetTokens || 0
-		const reasoningOn = model.info.supportsReasoning && budget_tokens > 0
+		const reasoningOn = model.info.supportsReasoning && (model.info.thinkingAlwaysOn || budget_tokens > 0)
 		const useAdaptive = isAnthropicAdaptiveThinkingSupported(modelId, model.info)
 
 		// Prepare request for Anthropic model using Converse API
@@ -524,7 +525,7 @@ export class AwsBedrockHandler implements ApiHandler {
 				}),
 				...(reasoningOn &&
 					useAdaptive && {
-						output_config: { effort: this.options.reasoningEffort || "high" },
+						output_config: { effort: getAnthropicReasoningEffort(model.info, this.options.reasoningEffort) },
 					}),
 			},
 		})

@@ -167,6 +167,8 @@ export interface ManifestData {
 	entry: "tool.ts"
 	createdBy: "dirac"
 	createdAt: string
+	description?: string
+	parameters?: DiracToolSpec["parameters"]
 }
 
 export async function resolveTaskToolDir(name: string, taskId: string): Promise<string> {
@@ -175,7 +177,7 @@ export async function resolveTaskToolDir(name: string, taskId: string): Promise<
 	return path.join(taskDir, "tools", name)
 }
 
-export function buildManifest(name: string, scope: ToolScope): ManifestData {
+export function buildManifest(name: string, scope: ToolScope, description?: string, parameters?: DiracToolSpec["parameters"]): ManifestData {
 	return {
 		schemaVersion: 1,
 		id: name,
@@ -184,5 +186,7 @@ export function buildManifest(name: string, scope: ToolScope): ManifestData {
 		entry: "tool.ts",
 		createdBy: "dirac",
 		createdAt: new Date().toISOString(),
+		description,
+		parameters,
 	}
 }

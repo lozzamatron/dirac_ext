@@ -70,7 +70,11 @@ export const XaiProvider = ({ showModelOptions, isPopup, currentMode }: XaiProvi
 					/>
 
 					{supportsReasoningEffortForModelId(selectedModelId, selectedModelInfo) && (
-						<ReasoningEffortSelector currentMode={currentMode} />
+						<ReasoningEffortSelector
+							allowedEfforts={selectedModelInfo.reasoningEffortOptions}
+							currentMode={currentMode}
+							defaultEffort={selectedModelInfo.defaultReasoningEffort}
+						/>
 					)}
 
 					<ModelInfoView isPopup={isPopup} modelInfo={selectedModelInfo} selectedModelId={selectedModelId} />

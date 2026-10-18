@@ -27,12 +27,18 @@ const currentModelResponse = (modelId = "gpt-5.6-terra") =>
 
 function createHandler(
 	createStub: sinon.SinonStub,
-	options: { modelId?: string; compactStub?: sinon.SinonStub; inferenceSpeed?: "default" | "standard" | "fast" } = {},
+	options: {
+		modelId?: string
+		compactStub?: sinon.SinonStub
+		inferenceSpeed?: "default" | "standard" | "fast"
+		reasoningEffort?: string
+	} = {},
 ): OpenAiNativeHandler {
 	const handler = new OpenAiNativeHandler({
 		openAiNativeApiKey: "test-api-key",
 		apiModelId: options.modelId ?? "gpt-5.6-terra",
 		inferenceSpeed: options.inferenceSpeed,
+		reasoningEffort: options.reasoningEffort,
 	})
 	sinon.stub(handler as any, "ensureClient").returns({
 		responses: { create: createStub, compact: options.compactStub ?? sinon.stub() },
@@ -104,6 +110,30 @@ describe("OpenAiNativeHandler persisted reasoning", () => {
 		params.model.should.equal("gpt-6-astra")
 		params.previous_response_id.should.equal("resp_123")
 		params.reasoning.context.should.equal("all_turns")
+	})
+
+	it("uses GPT-6 Sol's default reasoning effort and strict function tools", async () => {
+		const createStub = sinon.stub().resolves(createAsyncIterable())
+		const handler = createHandler(createStub, { modelId: "gpt-6-sol" })
+
+		await drain(handler.createMessage("system", [{ role: "user", content: "hello" }] as any, tools))
+
+		const params = createStub.firstCall.args[0]
+		params.model.should.equal("gpt-6-sol")
+		params.reasoning.effort.should.equal("medium")
+		params.tools.find((tool: any) => tool.type === "function").strict.should.equal(true)
+	})
+
+	it("sends GPT-6.1 Sol with supported reasoning effort and strict function tools", async () => {
+		const createStub = sinon.stub().resolves(createAsyncIterable())
+		const handler = createHandler(createStub, { modelId: "gpt-6.1-sol", reasoningEffort: "none" })
+
+		await drain(handler.createMessage("system", [{ role: "user", content: "hello" }] as any, tools))
+
+		const params = createStub.firstCall.args[0]
+		params.model.should.equal("gpt-6.1-sol")
+		params.reasoning.effort.should.equal("medium")
+		params.tools.find((tool: any) => tool.type === "function").strict.should.equal(true)
 	})
 
 	it("preserves Responses call IDs for persisted-reasoning tool results", async () => {

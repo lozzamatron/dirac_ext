@@ -1,5 +1,6 @@
 import { ModelInfo, XAIModelId, xaiDefaultModelId, xaiModels } from "@shared/api"
 import { normalizeOpenaiReasoningEffort } from "@shared/storage/types"
+import { resolveReasoningEffortForModel } from "@shared/utils/reasoning-support"
 import { shouldSkipReasoningForModel } from "@utils/model-utils"
 import OpenAI from "openai"
 import type { ChatCompletionTool as OpenAITool } from "openai/resources/chat/completions"
@@ -46,19 +47,22 @@ export class XAIHandler implements ApiHandler {
 	@withRetry()
 	async *createMessage(systemPrompt: string, messages: DiracStorageMessage[], tools?: OpenAITool[]): ApiStream {
 		const client = this.ensureClient()
-		const modelId = this.getModel().id
+		const model = this.getModel()
+		const modelId = model.id
 		const requestedEffort = normalizeOpenaiReasoningEffort(this.options.reasoningEffort)
 		const reasoningEffort: ChatCompletionReasoningEffort | undefined =
-			requestedEffort === "none" || (modelId.includes("3-mini") && !["low", "high"].includes(requestedEffort))
-				? undefined
-				: requestedEffort
+			modelId === "grok-4.7"
+				? resolveReasoningEffortForModel(modelId, model.info, this.options.reasoningEffort)
+				: requestedEffort === "none" || (modelId.includes("3-mini") && !["low", "high"].includes(requestedEffort))
+					? undefined
+					: requestedEffort
 		const stream = await client.chat.completions.create({
 			model: modelId,
-			max_completion_tokens: this.getModel().info.maxTokens,
+			max_completion_tokens: model.info.maxTokens,
 			temperature: 0,
 			messages: [
 				{ role: "system", content: systemPrompt },
-				...convertToOpenAiMessages(messages, undefined, this.getModel().info.supportsImages !== false),
+				...convertToOpenAiMessages(messages, undefined, model.info.supportsImages !== false),
 			],
 			stream: true,
 			stream_options: { include_usage: true },

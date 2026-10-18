@@ -34,16 +34,6 @@ export class AstEditApproval {
 			return { approved: true, autoApproved: true }
 		}
 
-		if (!utilityPermissionHandlingEnabled && env.config.isSubagentExecution) {
-			return {
-				approved: false,
-				autoApproved: false,
-				feedback: formatResponse.toolError(
-					"edit_ast cannot modify one or more requested paths in this non-interactive subagent. Run the edit in the parent agent where approval can be requested.",
-				),
-			}
-		}
-
 		const diffs = this.formatter.diffs(plan)
 		let reviewShown = false
 		await this.updateProgressCards(progressCards, "Plan validated. Waiting for approval...")

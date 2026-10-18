@@ -3,7 +3,8 @@ import type { WebviewSurface } from "@core/webview/InstanceRegistry"
 import { CommentReviewController } from "@/integrations/editor/CommentReviewController"
 import { DiffViewProvider } from "@/integrations/editor/DiffViewProvider"
 import { ITerminalManager } from "@/integrations/terminal/types"
-import { HostBridgeClientProvider } from "./host-provider-types"
+import { setHostCapabilities } from "./host-capabilities"
+import { HostBridgeClientProvider, type HostCapabilities } from "./host-provider-types"
 /**
  * Singleton class that manages host-specific providers for dependency injection.
  *
@@ -46,9 +47,15 @@ export class HostProvider {
 	// Use to this to get the location of extension assets.
 	extensionFsPath: string
 	getEnvironmentVariables: (cwd: string) => Promise<{ [key: string]: string | undefined } | undefined>
+	/** Host-level workspace restriction; never substitutes for a code-specific grant. */
+	isWorkspaceTrusted: () => boolean
 
 	// The absolute file system path where the extension can store global state.
 	globalStorageFsPath: string
+
+	// Optional host-only capabilities (walkthrough UI, vscode.lm models, terminal
+	// contents capture). Empty on hosts that cannot provide them.
+	readonly capabilities: HostCapabilities
 
 	// Private constructor to enforce singleton pattern
 	private constructor(
@@ -64,6 +71,8 @@ export class HostProvider {
 		extensionFsPath: string,
 		globalStorageFsPath: string,
 		getEnvironmentVariables: GetEnvironmentVariables,
+		isWorkspaceTrusted: () => boolean = () => true,
+		capabilities: HostCapabilities = {},
 	) {
 		this.diracType = diracType
 		this.createDiracWebviewProvider = createDiracWebviewProvider
@@ -77,6 +86,9 @@ export class HostProvider {
 		this.extensionFsPath = extensionFsPath
 		this.globalStorageFsPath = globalStorageFsPath
 		this.getEnvironmentVariables = getEnvironmentVariables
+		this.isWorkspaceTrusted = isWorkspaceTrusted
+		this.capabilities = capabilities
+		setHostCapabilities(capabilities)
 	}
 
 	public static initialize(
@@ -92,6 +104,8 @@ export class HostProvider {
 		extensionFsPath: string,
 		globalStorageFsPath: string,
 		getEnvironmentVariables: GetEnvironmentVariables,
+		isWorkspaceTrusted: () => boolean = () => true,
+		capabilities: HostCapabilities = {},
 	): HostProvider {
 		if (HostProvider.instance) {
 			throw new Error("Host provider has already been initialized.")
@@ -109,6 +123,8 @@ export class HostProvider {
 			extensionFsPath,
 			globalStorageFsPath,
 			getEnvironmentVariables,
+			isWorkspaceTrusted,
+			capabilities,
 		)
 		return HostProvider.instance
 	}
@@ -133,6 +149,7 @@ export class HostProvider {
 	 */
 	public static reset(): void {
 		HostProvider.instance = null
+		setHostCapabilities(undefined)
 	}
 
 	public static get workspace() {

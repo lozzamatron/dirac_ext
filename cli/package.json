@@ -1,6 +1,6 @@
 {
 	"name": "dirac-cli",
-	"version": "0.5.13",
+	"version": "0.5.22",
 	"description": "Autonomous coding agent CLI - capable of creating/editing files, running commands, using the browser, and more",
 	"files": [
 		"dist",
@@ -107,6 +107,8 @@
 		"pino": "^10.0.0",
 		"pino-roll": "^4.0.0",
 		"prompts": "^2.4.2",
-		"react": "^19.2.3"
+		"react": "^19.2.3",
+		"string-width": "8.2.1",
+		"wrap-ansi": "^9.0.2"
 	}
 }

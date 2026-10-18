@@ -3,7 +3,6 @@ import { getTaskHookModelContext } from "../runtime/TaskRuntimeModelContext"
 import { getHooksEnabledSafe } from "@core/hooks/hooks-utils"
 import { Logger } from "@shared/services/Logger"
 import { AnchorStateManager } from "@utils/AnchorStateManager"
-import { releaseTaskLock } from "../TaskLockUtils"
 import type { LifecycleManagerDependencies } from "../types/lifecycle-manager"
 
 // Manages task abort/cancel — sets abort flag, cancels hooks/commands, runs TaskCancel hook, cleans up resources.
@@ -20,7 +19,6 @@ export class TaskAbortManager {
 			await this.saveStateAndPost()
 			await this.disposeResources()
 		} finally {
-			await this.releaseLockIfNeeded()
 			await this.postFinalState()
 		}
 	}
@@ -92,16 +90,6 @@ export class TaskAbortManager {
 		AnchorStateManager.reset(this.deps.ulid)
 	}
 
-	private async releaseLockIfNeeded() {
-		if (!this.deps.taskState.taskLockAcquired) return
-		try {
-			await releaseTaskLock(this.deps.taskId)
-			this.deps.taskState.taskLockAcquired = false
-			Logger.info(`[Task ${this.deps.taskId}] Task lock released`)
-		} catch (error) {
-			Logger.error(`[Task ${this.deps.taskId}] Failed to release task lock:`, error)
-		}
-	}
 
 	private async postFinalState() {
 		try {

@@ -109,6 +109,13 @@ export interface DiracStorageMessage extends Anthropic.MessageParam {
 	ts?: number
 }
 
+export interface TranscriptPage {
+	entries: DiracStorageMessage[]
+	/** Oversized messages are returned as consecutive slices of their JSON, never silently truncated. */
+	fragment?: { messageIndex: number; offset: number; totalCharacters: number; json: string }
+	nextCursor?: string
+}
+
 export function removeUserInputMarkersFromContent(block: DiracContent): DiracContent {
 	const { isUserInput, ...contentBlock } = block as DiracContent & { isUserInput?: boolean }
 	if (block.type === "tool_result" && Array.isArray(block.content)) {

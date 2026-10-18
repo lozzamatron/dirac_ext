@@ -1,6 +1,7 @@
 import "should"
 import { expect } from "chai"
 import sinon from "sinon"
+import * as net from "@/shared/net"
 import { OpenAiResponsesCompatibleHandler } from "../openai-responses-compatible"
 
 const tools = [
@@ -58,4 +59,20 @@ describe("OpenAiResponsesCompatibleHandler", () => {
 		expect(params.reasoning?.context).to.equal(undefined)
 		params.input.should.have.length(3)
 	})
+
+	it("passes custom headers to the OpenAI client", () => {
+		const createClient = sinon.stub(net, "createOpenAIClient").returns({} as any)
+		const handler = new OpenAiResponsesCompatibleHandler({
+			openAiApiKey: "test-api-key",
+			openAiHeaders: { "x-opencode-session": "dirac-001" },
+		})
+
+		const client = (handler as any).ensureClient()
+
+		expect(client).to.deep.equal({})
+		expect(createClient.firstCall.args[0].defaultHeaders).to.deep.equal({
+			"x-opencode-session": "dirac-001",
+		})
+	})
+
 })

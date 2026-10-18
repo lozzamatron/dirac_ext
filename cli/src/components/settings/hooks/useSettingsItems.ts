@@ -32,11 +32,14 @@ export interface UseSettingsItemsProps {
 	utilityModelSelection?: ModelProviderSelection
 	utilityPermissionPolicy: string
 	lightTerminalTheme: boolean
+	vimModeEnabled?: boolean
 	preferredLanguage: string
 	telemetry: TelemetrySetting
 	openAiHeaders: Record<string, string>
 	autoCondenseContextLimit: number
 	openAiCodexIsAuthenticated: boolean
+	unbiasedIsAuthenticated: boolean
+	unbiasedWorkloadName?: string
 	openAiCodexEmail?: string
 	githubIsAuthenticated: boolean
 	githubEmail?: string
@@ -83,6 +86,8 @@ function createModelItems(props: UseSettingsItemsProps): ListItem[] {
 		planReasoningEffort,
 		openAiHeaders,
 		openAiCodexIsAuthenticated,
+		unbiasedIsAuthenticated,
+		unbiasedWorkloadName,
 		openAiCodexEmail,
 		githubIsAuthenticated,
 		githubEmail,
@@ -102,7 +107,7 @@ function createModelItems(props: UseSettingsItemsProps): ListItem[] {
 	const planReasoningEffortOptions = getReasoningEffortOptionsForModel(planModelId, planModelInfo)
 	const showActReasoningEffort = actReasoningEffortOptions.length > 0
 	const showPlanReasoningEffort = planReasoningEffortOptions.length > 0
-	const providerHidesThinkingBudget = provider === "openai-native" || provider === "openai-codex" || provider === "zai"
+	const providerHidesThinkingBudget = provider === "openai-native" || provider === "openai-codex" || provider === "unbiased" || provider === "zai"
 	const showActThinkingOption = !providerHidesThinkingBudget && !showActReasoningEffort
 	const showPlanThinkingOption = !providerHidesThinkingBudget && !showPlanReasoningEffort
 	const displayedActReasoningEffort =
@@ -140,37 +145,37 @@ function createModelItems(props: UseSettingsItemsProps): ListItem[] {
 				: []),
 			...(isOpenRouter
 				? [
-						editable(
-							`${prefix}OpenRouterProviders`,
-							mode === "plan" && planModelId === actModelId
-								? "Allowed upstream providers (shared with Act)"
-								: "Allowed upstream providers",
-							formatPinnedProviderCount(modelId),
-							"Restrict which upstream providers OpenRouter may use. Restrictions can reduce availability.",
-						),
-					]
+					editable(
+						`${prefix}OpenRouterProviders`,
+						mode === "plan" && planModelId === actModelId
+							? "Allowed upstream providers (shared with Act)"
+							: "Allowed upstream providers",
+						formatPinnedProviderCount(modelId),
+						"Restrict which upstream providers OpenRouter may use. Restrictions can reduce availability.",
+					),
+				]
 				: []),
 			...(showThinking
 				? [
-						checkbox(
-							`${prefix}ThinkingEnabled`,
-							"Thinking budget (1,024 tokens)",
-							thinkingEnabled,
-							"Enable the existing 1,024-token extended-thinking budget. Thinking may increase latency and cost.",
-						),
-					]
+					checkbox(
+						`${prefix}ThinkingEnabled`,
+						"Thinking budget (1,024 tokens)",
+						thinkingEnabled,
+						"Enable the existing 1,024-token extended-thinking budget. Thinking may increase latency and cost.",
+					),
+				]
 				: []),
 			...(showReasoning
 				? [
-						{
-							key: `${prefix}ReasoningEffort`,
-							label: "Reasoning effort",
-							type: SettingsItemType.CYCLE,
-							value: reasoningEffort,
-							cycleOptions: reasoningEffortOptions,
-							description: "Higher effort can improve depth but usually increases latency and token usage.",
-						},
-					]
+					{
+						key: `${prefix}ReasoningEffort`,
+						label: "Reasoning effort",
+						type: SettingsItemType.CYCLE,
+						value: reasoningEffort,
+						cycleOptions: reasoningEffortOptions,
+						description: "Higher effort can improve depth but usually increases latency and token usage.",
+					},
+				]
 				: []),
 		]
 	}
@@ -184,103 +189,89 @@ function createModelItems(props: UseSettingsItemsProps): ListItem[] {
 		),
 		...(ProviderToBaseUrlKeyMap[provider as ApiProvider]
 			? [
-					editable(
-						"baseUrl",
-						"Base URL",
-						(stateManager.getGlobalSettingsKey(ProviderToBaseUrlKeyMap[provider as ApiProvider]!) as string) || "",
-						"Base address of an OpenAI-compatible API. Do not include /chat/completions.",
-					),
-				]
+				editable(
+					"baseUrl",
+					"Base URL",
+					(stateManager.getGlobalSettingsKey(ProviderToBaseUrlKeyMap[provider as ApiProvider]!) as string) || "",
+					"Base address of an OpenAI-compatible API. Do not include /chat/completions.",
+				),
+			]
 			: []),
 		...(provider === "openai"
 			? [
+				{
+					key: "openAiHeaders",
+					label: "Custom headers",
+					type: SettingsItemType.OBJECT,
+					value: openAiHeaders,
+					description: "Additional sensitive headers sent with requests to this provider.",
+				},
+			]
+			: []),
+		...(provider === "unbiased"
+			? unbiasedIsAuthenticated
+				? [
 					{
-						key: "openAiHeaders",
-						label: "Custom headers",
-						type: SettingsItemType.OBJECT,
-						value: openAiHeaders,
-						description: "Additional sensitive headers sent with requests to this provider.",
+						key: "unbiasedAccount",
+						label: "Signed in to",
+						type: SettingsItemType.READONLY,
+						value: unbiasedWorkloadName || "Unbiased",
 					},
+					{ key: "unbiasedSignOut", label: "Sign out on this device", type: SettingsItemType.ACTION, value: "" },
 				]
+				: [{ key: "unbiasedSignIn", label: "Sign in with Unbiased", type: SettingsItemType.ACTION, value: "" }]
 			: []),
 		...(provider === "openai-codex" && openAiCodexIsAuthenticated
 			? [
-					{
-						key: "codexEmail",
-						label: "Authenticated as",
-						type: SettingsItemType.READONLY,
-						value: openAiCodexEmail || "ChatGPT User",
-					},
-					{
-						key: "codexSignOut",
-						label: "Sign out",
-						type: SettingsItemType.ACTION,
-						value: "",
-					},
-				]
+				{
+					key: "codexEmail",
+					label: "Authenticated as",
+					type: SettingsItemType.READONLY,
+					value: openAiCodexEmail || "ChatGPT User",
+				},
+				{
+					key: "codexSignOut",
+					label: "Sign out",
+					type: SettingsItemType.ACTION,
+					value: "",
+				},
+			]
 			: []),
 		...(provider === "github-copilot" && githubIsAuthenticated
 			? [
-					{
-						key: "githubEmail",
-						label: "Authenticated as",
-						type: SettingsItemType.READONLY,
-						value: githubEmail || "GitHub User",
-					},
-					{
-						key: "githubSignOut",
-						label: "Sign out",
-						type: SettingsItemType.ACTION,
-						value: "",
-					},
-				]
+				{
+					key: "githubEmail",
+					label: "Authenticated as",
+					type: SettingsItemType.READONLY,
+					value: githubEmail || "GitHub User",
+				},
+				{
+					key: "githubSignOut",
+					label: "Sign out",
+					type: SettingsItemType.ACTION,
+					value: "",
+				},
+			]
 			: []),
 		...(provider === "github-copilot" && !githubIsAuthenticated
 			? [
-					{
-						key: "githubSignIn",
-						label: "Sign in to GitHub Copilot",
-						type: SettingsItemType.ACTION,
-						value: "",
-					},
-				]
+				{
+					key: "githubSignIn",
+					label: "Sign in to GitHub Copilot",
+					type: SettingsItemType.ACTION,
+					value: "",
+				},
+			]
 			: []),
 		...(separateModels
 			? [
-					{
-						key: "actHeader",
-						label: "Act Mode",
-						type: SettingsItemType.HEADER,
-						value: "",
-					},
-					...modelItems(
-						"act",
-						actModelId,
-						isActCustom,
-						actThinkingEnabled,
-						displayedActReasoningEffort,
-						actReasoningEffortOptions,
-						showActThinkingOption,
-						showActReasoningEffort,
-					),
-					{
-						key: "planHeader",
-						label: "Plan Mode",
-						type: SettingsItemType.HEADER,
-						value: "",
-					},
-					...modelItems(
-						"plan",
-						planModelId,
-						isPlanCustom,
-						planThinkingEnabled,
-						displayedPlanReasoningEffort,
-						planReasoningEffortOptions,
-						showPlanThinkingOption,
-						showPlanReasoningEffort,
-					),
-				]
-			: modelItems(
+				{
+					key: "actHeader",
+					label: "Act Mode",
+					type: SettingsItemType.HEADER,
+					value: "",
+				},
+				...modelItems(
 					"act",
 					actModelId,
 					isActCustom,
@@ -289,23 +280,50 @@ function createModelItems(props: UseSettingsItemsProps): ListItem[] {
 					actReasoningEffortOptions,
 					showActThinkingOption,
 					showActReasoningEffort,
-				)),
+				),
+				{
+					key: "planHeader",
+					label: "Plan Mode",
+					type: SettingsItemType.HEADER,
+					value: "",
+				},
+				...modelItems(
+					"plan",
+					planModelId,
+					isPlanCustom,
+					planThinkingEnabled,
+					displayedPlanReasoningEffort,
+					planReasoningEffortOptions,
+					showPlanThinkingOption,
+					showPlanReasoningEffort,
+				),
+			]
+			: modelItems(
+				"act",
+				actModelId,
+				isActCustom,
+				actThinkingEnabled,
+				displayedActReasoningEffort,
+				actReasoningEffortOptions,
+				showActThinkingOption,
+				showActReasoningEffort,
+			)),
 		...(isOpenRouter
 			? [
-					{
-						key: "openRouterProviderSorting",
-						label: "Provider sorting",
-						type: SettingsItemType.CYCLE,
-						value: providerSortingLabel,
-						description: "Choose how OpenRouter prioritizes eligible upstream providers.",
-					},
-					checkbox(
-						"openRouterPreventFallbacks",
-						"Prevent fallbacks",
-						openRouterPreventFallbacks,
-						"Fail instead of routing to another eligible provider. This can reduce reliability.",
-					),
-				]
+				{
+					key: "openRouterProviderSorting",
+					label: "Provider sorting",
+					type: SettingsItemType.CYCLE,
+					value: providerSortingLabel,
+					description: "Choose how OpenRouter prioritizes eligible upstream providers.",
+				},
+				checkbox(
+					"openRouterPreventFallbacks",
+					"Prevent fallbacks",
+					openRouterPreventFallbacks,
+					"Fail instead of routing to another eligible provider. This can reduce reliability.",
+				),
+			]
 			: []),
 		checkbox(
 			"separateModels",
@@ -368,23 +386,23 @@ function createUtilityItems(props: UseSettingsItemsProps): ListItem[] {
 		),
 		...(hasEnabledUseCase && !utilityModelSelection
 			? [
-					{
-						key: "utilityModelConfigurationWarning",
-						label: "",
-						type: SettingsItemType.READONLY,
-						value: "Select a Utility Model provider and model before this use case can run.",
-					},
-				]
+				{
+					key: "utilityModelConfigurationWarning",
+					label: "",
+					type: SettingsItemType.READONLY,
+					value: "Select a Utility Model provider and model before this use case can run.",
+				},
+			]
 			: []),
 		...(utilityModelUseCases.permissionHandling && !utilityPermissionPolicy.trim()
 			? [
-					{
-						key: "utilityPolicyWarning",
-						label: "",
-						type: SettingsItemType.READONLY,
-						value: "Add an approval policy before AI-assisted permission handling can run.",
-					},
-				]
+				{
+					key: "utilityPolicyWarning",
+					label: "",
+					type: SettingsItemType.READONLY,
+					value: "Add an approval policy before AI-assisted permission handling can run.",
+				},
+			]
 			: []),
 		{
 			key: "utilityModelDisclosure",
@@ -613,6 +631,13 @@ function createTerminalItems(props: UseSettingsItemsProps): ListItem[] {
 			props.lightTerminalTheme,
 			"Choose the CLI palette. DIRAC_COLOR_MODE overrides this preference. A restart is currently required.",
 		),
+		checkbox(
+			"vimModeEnabled",
+			"Vim prompt editing",
+			props.vimModeEnabled,
+			"Opt into modal prompt editing. Esc enters NORMAL; i returns to INSERT. Applies immediately; starts in INSERT.",
+			{ keywords: ["vi", "vim", "bindings", "input", "normal", "insert"] },
+		),
 	]
 }
 
@@ -700,11 +725,14 @@ export function useSettingsItems(props: UseSettingsItemsProps): ListItem[] {
 			props.utilityModelSelection,
 			props.utilityPermissionPolicy,
 			props.lightTerminalTheme,
+			props.vimModeEnabled,
 			props.preferredLanguage,
 			props.telemetry,
 			props.openAiHeaders,
 			props.autoCondenseContextLimit,
 			props.openAiCodexIsAuthenticated,
+			props.unbiasedIsAuthenticated,
+			props.unbiasedWorkloadName,
 			props.openAiCodexEmail,
 			props.githubIsAuthenticated,
 			props.githubEmail,

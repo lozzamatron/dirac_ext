@@ -114,6 +114,20 @@ describe("SymbolIndexEligibility", () => {
 		;(await eligibility.enumerate()).paths.has("dynamic.ts").should.be.true()
 	})
 
+	it("keeps watch coverage for non-Git sources matched by a local .gitignore", async () => {
+		await fs.rm(path.join(projectRoot, ".git"), { recursive: true })
+		await fs.mkdir(path.join(projectRoot, ".hg"))
+		await fs.mkdir(path.join(projectRoot, "sources"))
+		await fs.writeFile(path.join(projectRoot, ".gitignore"), "sources/\n")
+		await fs.writeFile(path.join(projectRoot, "sources", "main.ts"), "export const value = 1\n")
+
+		const result = await new SymbolIndexEligibility(projectRoot).enumerate()
+
+		result.isGitWorkspace.should.be.false()
+		result.paths.has(path.join("sources", "main.ts")).should.be.true()
+		result.directories.has(path.join(projectRoot, "sources")).should.be.true()
+	})
+
 	it("fails closed when authoritative Git eligibility enumeration fails", async () => {
 		const eligibility = new SymbolIndexEligibility(projectRoot)
 		const runGit = sinon.stub(eligibility as any, "runGit").callsFake(async (...callArguments: unknown[]) => {

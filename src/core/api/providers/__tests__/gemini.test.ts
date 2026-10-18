@@ -1054,13 +1054,13 @@ describe("GeminiHandler", () => {
 		it("should fall back to default model when apiModelId is not in geminiModels", () => {
 			const handler = new GeminiHandler({ geminiApiKey: "test-api-key", apiModelId: "nonexistent-model" })
 			const result = handler.getModel()
-			result.id.should.equal("gemini-3.1-pro-preview")
+			result.id.should.equal("gemini-4-argon")
 		})
 
 		it("should fall back to default model when apiModelId is not set", () => {
 			const handler = new GeminiHandler({ geminiApiKey: "test-api-key" })
 			const result = handler.getModel()
-			result.id.should.equal("gemini-3.1-pro-preview")
+			result.id.should.equal("gemini-4-argon")
 		})
 	})
 })

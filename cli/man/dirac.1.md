@@ -28,6 +28,12 @@ The CLI has an interactive React/Ink interface and a standalone output path for 
 
 **Interactive mode** is used when stdin and stdout are terminal devices and neither **--yolo** nor **--json** is present. With no prompt, Dirac opens the composer. With a prompt, it submits the first turn immediately. The interface supports approvals, feedback, follow-up messages, history, settings, model selection, skills, and task resumption.
 
+Press **Enter** to submit a prompt. **Shift+Enter** inserts a newline when the terminal sends a distinct modified-Enter sequence (CSI-u `ESC [ 13 ; 2 u` or xterm modifyOtherKeys `ESC [ 27 ; 2 ; 13 ~`). **Shift+Down** also inserts a newline. If Enter and Shift+Enter send the same carriage return, use Shift+Down or configure a Shift+Enter mapping to one of these sequences; identical input bytes cannot be distinguished.
+
+**Ctrl+Up / Ctrl+Down** recall older/newer prompts from the current conversation and recent conversations in the same workspace. Recall fills the input without sending; edit and press Enter to submit. Moving forward past the newest prompt restores the original draft and cursor. Only text is recalled, not old attachments. Ordinary arrows still move the cursor or scroll the response. If the terminal or OS intercepts Ctrl+arrows, configure it to send `ESC [ 1 ; 5 A` / `ESC [ 1 ; 5 B`.
+
+Scrollable response cards, including proposed plans and follow-up responses, open at the beginning. Use **Down** for later lines and **Up** for earlier lines. In a multiline draft, arrows navigate the prompt first and scroll the response only at the draft's navigation boundaries. Editing a draft retains the response's scroll position.
+
 **Standalone mode** is selected when **--yolo** or **--json** is present, stdin was piped, stdin is redirected, or stdout is redirected. It does not render the Ink interface.
 
 In standalone text mode, stdout is reserved for the final completion result. Task IDs, progress, tool activity, verbose reasoning, summaries, warnings, and errors are written to stderr. Redirected output has no ANSI escape sequences unless color is explicitly forced.
@@ -317,6 +323,14 @@ dirac auth --provider openai --apikey "$OPENAI_API_KEY" --modelid gpt-4o --baseu
 ```
 
 Interactive setup masks keys in terminal output. Quick setup validates the provider and required values instead of falling back silently.
+
+# VIM PROMPT EDITING
+
+Enable **Vim prompt editing** in **/settings → Terminal**, or search settings for **vim**. It is disabled by default, saved across launches, and applies immediately. The footer shows **INSERT** or **NORMAL**. New drafts start in INSERT; **Esc** enters NORMAL; **i**, **a**, **I**, and **A** return to INSERT. Enter submits in either mode.
+
+NORMAL supports **h/l** (graphemes), **j/k** (logical lines), **w/b/e** (words), **0/^/\$** (line positions), and **gg/G** (draft start/last-line start). Use **d/c** with **h/l/w/b/e/0/^/\$** to delete/change, **dd/cc** for lines, **D/C** to line end, and **x** for graphemes. Numeric counts include **3b**, **2dw**, and **d2w**. **u** undoes; **Ctrl+R** redoes unless an active Goal owns that shortcut. Esc cancels an incomplete command.
+
+Type, paste, complete slash commands, and insert file mentions in INSERT. Printable input in NORMAL is interpreted as editing commands. This subset does not implement registers, yank/put, search, repeat, or Ex commands. The preference does not affect standalone text/JSON or ACP input.
 
 # TERMINAL COLORS
 

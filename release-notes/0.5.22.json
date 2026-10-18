@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "version": "0.5.22",
+  "kind": "patch",
+  "announce": true,
+  "sourceTag": "v0.5.21",
+  "analyzedCommit": "85eb45ecb2afb073dafe8b6189e3cc1ce11415d6",
+  "headline": "Updates and improvements",
+  "highlights": [
+    {
+      "id": "feat-0032c8ea",
+      "title": "Dirac users get 1 month free on Unbiased AI coding plan",
+      "category": "feat",
+      "evidence": [
+        "0032c8eaf2f08d7f57e6078c8d8124ff08d042d8"
+      ]
+    },
+    {
+      "id": "perf-d0e1443c",
+      "title": "improve the glob searches and .gitignore exclusions",
+      "category": "perf",
+      "evidence": [
+        "d0e1443c140341aa0fd108ac55b825349c509260"
+      ]
+    },
+    {
+      "id": "fix-8caea78b",
+      "title": "isolate goal ownership and harden failed-run recovery",
+      "category": "fix",
+      "evidence": [
+        "8caea78bc82c74bce125e2081a7b9f4ec1a98a24"
+      ]
+    }
+  ]
+}

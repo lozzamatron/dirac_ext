@@ -51,6 +51,7 @@ describe("ChatFooter modes", () => {
 		expect(frame).toContain(mode === "plan" ? "Plan (Goal)" : "Act (Goal)")
 		expect(frame).not.toContain(mode === "plan" ? "Act (Goal)" : "Plan (Goal)")
 		expect(frame).toContain("Ctrl+G details")
+		expect(frame).toContain("Ctrl+↑/↓ previous prompts")
 		expect(frame).toContain("test-provider: test-model · project · Auto off · YOLO off · Quiet off")
 		expect(frame).not.toContain("locked")
 		expect(frame).not.toContain("usage")

@@ -202,6 +202,90 @@ describe("ToolCallProcessor", () => {
 		;[...processor.processToolCallDeltas(newSetupChunk)].should.have.length(0)
 		;[...processor.processToolCallDeltas(newArgsChunk)].should.have.length(1)
 	})
+
+	it("re-attributes arguments to active tool call when delta arrives with mismatched index and missing id/name", () => {
+		const warnStub = sinon.stub(Logger, "warn")
+		const processor = new ToolCallProcessor()
+
+		// Initial delta setting up tool call at index 0
+		const setupChunk = [
+			{
+				index: 0,
+				id: "call_123",
+				function: { name: "execute_command" },
+			},
+		] as any
+
+		// Provider sends arguments with mismatched index (e.g. index 1) without repeating id/name
+		const anomalyChunk = [
+			{
+				index: 1,
+				function: { arguments: '{"command":"ls"}' },
+			},
+		] as any
+
+		const firstResult = [...processor.processToolCallDeltas(setupChunk)]
+		const secondResult = [...processor.processToolCallDeltas(anomalyChunk)]
+
+		firstResult.should.have.length(0)
+		secondResult.should.have.length(1)
+
+		const toolCall = secondResult[0]!.tool_call as any
+		toolCall.call_id.should.equal("call_123")
+		toolCall.function.id.should.equal("call_123")
+		toolCall.function.name.should.equal("execute_command")
+		toolCall.function.arguments.should.equal('{"command":"ls"}')
+
+		expect(warnStub.called).to.be.true
+		const warnArg = warnStub.firstCall.args[0] as string
+		expect(warnArg).to.include("re-attributing to active tool call index 0")
+		expect(warnArg).to.include("id: call_123, name: execute_command")
+	})
+
+	it("drops argument delta and logs warning when no active tool call exists", () => {
+		const warnStub = sinon.stub(Logger, "warn")
+		const processor = new ToolCallProcessor()
+
+		// Delta with arguments but no preceding tool call setup
+		const orphanChunk = [
+			{
+				index: 0,
+				function: { arguments: '{"command":"pwd"}' },
+			},
+		] as any
+
+		const result = [...processor.processToolCallDeltas(orphanChunk)]
+		result.should.have.length(0)
+
+		expect(warnStub.called).to.be.true
+		const warnArg = warnStub.firstCall.args[0] as string
+		expect(warnArg).to.include("dropping argument fragment")
+		expect(warnArg).to.include("(17 chars)")
+	})
+
+	it("drops ambiguous argument fragments when multiple complete tool calls exist", () => {
+		const warnStub = sinon.stub(Logger, "warn")
+		const processor = new ToolCallProcessor()
+
+		// Two parallel calls both complete id/name setup
+		const setupChunk = [
+			{ index: 0, id: "call_a", function: { name: "read_file" } },
+			{ index: 1, id: "call_b", function: { name: "write_file" } },
+		] as any
+
+		// Orphan fragment at a fresh index — its owner cannot be determined
+		const orphanChunk = [{ index: 2, function: { arguments: '{"x":1}' } }] as any
+
+		;[...processor.processToolCallDeltas(setupChunk)].should.have.length(0)
+		const result = [...processor.processToolCallDeltas(orphanChunk)]
+		result.should.have.length(0)
+
+		expect(warnStub.called).to.be.true
+		const warnArg = warnStub.firstCall.args[0] as string
+		expect(warnArg).to.include("ambiguous tool-call fragment for index 2")
+		expect(warnArg).to.include("call_a, call_b")
+		expect(warnArg).to.include("7-char fragment")
+	})
 })
 
 describe("getOpenAIToolParams", () => {

@@ -3,14 +3,14 @@ import { recordSuccessfulModelProviderPreset } from "@core/models/modelProviderP
 import type { ApiProvider } from "@shared/api"
 import type { DiracApiReqCancelReason } from "@shared/ExtensionMessage"
 import { TaskStatus } from "@shared/ExtensionMessage"
-import { removeProviderBoundaryMetadataFromMessage } from "@shared/messages/content"
 import type { DiracStorageMessage } from "@shared/messages/content"
+import { removeProviderBoundaryMetadataFromMessage } from "@shared/messages/content"
 import { Logger } from "@shared/services/Logger"
 import { StreamingMetricsManager } from "./StreamingMetricsManager"
 import { buildApiRequestParams } from "./TaskRequestBuilder"
+import type { TaskRequestLoopContext } from "./TaskRequestLoop"
 import { handleApiRequestError } from "./TaskRequestOutcome"
 import { appendQueuedSteeringToNextApiRequest } from "./TaskSteering"
-import type { TaskRequestLoopContext } from "./TaskRequestLoop"
 
 export async function* attemptApiRequest(
 	ctx: TaskRequestLoopContext,
@@ -34,15 +34,13 @@ export async function* attemptApiRequest(
 	const finalizeApiReqMsg = async (cancelReason?: DiracApiReqCancelReason, streamingFailedMessage?: string) => {
 		await metricsManager.updateApiReqMsgFromMetrics(cancelReason, streamingFailedMessage)
 		await ctx.messageStateHandler.updateDiracMessage(lastApiReqIndex, {})
-		ctx.taskState.isApiRequestActive = false
-		ctx.taskState.activeVoiceStreamId = undefined
+		ctx.taskState.endApiRequest()
 	}
 
 	const abortStream = async (cancelReason: DiracApiReqCancelReason, streamingFailedMessage?: string) => {
-		ctx.taskState.didFinishAbortingStream = true
+		ctx.taskState.markStreamAbortFinished()
 		await finalizeApiReqMsg(cancelReason, streamingFailedMessage)
-		ctx.taskState.isApiRequestActive = false
-		ctx.taskState.activeVoiceStreamId = undefined
+		ctx.taskState.endApiRequest()
 	}
 
 	await appendQueuedSteeringToNextApiRequest(ctx.steeringContext, contextManagementMetadata.truncatedConversationHistory)
@@ -56,7 +54,9 @@ export async function* attemptApiRequest(
 	})
 
 	if (ctx.taskState.abort) throw new Error("Task instance aborted")
-	Logger.debug(`[Task ${ctx.taskId}] Request assembled for ${providerId}/${model.id} in ${Math.round(performance.now() - requestPreparationStartedAt)}ms`)
+	Logger.debug(
+		`[Task ${ctx.taskId}] Request assembled for ${providerId}/${model.id} in ${Math.round(performance.now() - requestPreparationStartedAt)}ms`,
+	)
 
 	const stream = ctx.requestRuntime.api.createMessage(
 		systemPrompt,
@@ -65,15 +65,16 @@ export async function* attemptApiRequest(
 		providerDispatch.options,
 	)
 	const iterator = stream[Symbol.asyncIterator]()
+	let emittedOutput = false
 
 	try {
 		ctx.taskState.status = TaskStatus.WAITING_FOR_API
 		await ctx.postStateToWebview()
 		if (ctx.taskState.abort) throw new Error("Task instance aborted")
 
-		ctx.taskState.isWaitingForFirstChunk = true
+		ctx.taskState.beginFirstChunkWait()
 		const firstChunk = await iterator.next().finally(() => {
-			ctx.taskState.isWaitingForFirstChunk = false
+			ctx.taskState.endFirstChunkWait()
 		})
 
 		if (firstChunk.done) {
@@ -81,6 +82,7 @@ export async function* attemptApiRequest(
 			return
 		}
 
+		emittedOutput = firstChunk.value.type !== "usage"
 		yield firstChunk.value
 
 		for await (const chunk of iterator) {
@@ -95,18 +97,16 @@ export async function* attemptApiRequest(
 				continue
 			}
 
+			emittedOutput = true
 			yield chunk
 		}
 
-		recordSuccessfulModelProviderPreset(
-			ctx.stateManager,
-			providerId as ApiProvider,
-			model.id,
-			model.info,
-			providerInfo.mode,
-		)
+		recordSuccessfulModelProviderPreset(ctx.stateManager, providerId as ApiProvider, model.id, model.info, providerInfo.mode)
 		await finalizeApiReqMsg()
 	} catch (error) {
+		// Once output is exposed, replaying this request would append a second response
+		// to the same stream. Let the outer loop persist the interrupted turn instead.
+		if (emittedOutput) throw error
 		const shouldRetry = await handleApiRequestError(ctx, {
 			error,
 			previousApiReqIndex,

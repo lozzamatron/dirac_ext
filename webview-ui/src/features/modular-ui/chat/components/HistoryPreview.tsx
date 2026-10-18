@@ -1,7 +1,7 @@
 import { StringRequest } from "@shared/proto/dirac/common"
 import { GoalControlRequest } from "@shared/proto/dirac/goal"
 import { isGoalHistoryItem, type HistoryItem } from "@shared/HistoryItem"
-import { memo, useMemo } from "react"
+import { memo, useMemo, useState } from "react"
 import DiracLogoVariable from "@/assets/DiracLogoVariable"
 import { useTaskStore } from "@/entities/task/store/taskStore"
 import { GoalServiceClient, TaskServiceClient } from "@/shared/api/grpc-client"
@@ -13,13 +13,18 @@ type HistoryPreviewProps = {
 
 const HistoryPreview = ({ showHistoryView }: HistoryPreviewProps) => {
 	const taskHistory = useTaskStore((state) => state.taskHistory)
+	const [openError, setOpenError] = useState<string>()
 	const quote = useMemo(() => getRandomQuote(), [])
 	const recentRuns = taskHistory.filter((item) => item.ts && item.task)
 	const handleHistorySelect = (item: HistoryItem) => {
+		setOpenError(undefined)
 		const openRun = isGoalHistoryItem(item)
 			? GoalServiceClient.selectGoal(GoalControlRequest.create({ goalId: item.id }))
 			: TaskServiceClient.showTaskWithId(StringRequest.create({ value: item.id }))
-		openRun.catch((error) => console.error("Error showing history run:", error))
+		openRun.catch((error) => {
+			console.error("Error showing history run:", error)
+			setOpenError(error instanceof Error ? error.message : "This run could not be opened.")
+		})
 	}
 
 	const formatDate = (timestamp: number) => {
@@ -159,6 +164,12 @@ const HistoryPreview = ({ showHistoryView }: HistoryPreviewProps) => {
 					</div>
 				</div>
 			</div>
+
+			{openError && (
+				<div className="mx-4 mb-2 rounded-xs bg-error/10 px-2 py-1 text-xs text-error" role="alert">
+					{openError}
+				</div>
+			)}
 
 			{
 				<div className="px-4">

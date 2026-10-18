@@ -1,4 +1,3 @@
-import { workspaceResolver } from "@core/workspace"
 import fs from "fs/promises"
 import * as path from "path"
 import { HostProvider } from "@/hosts/host-provider"
@@ -137,51 +136,25 @@ const OS_GENERATED_FILES = [
 	"desktop.ini", // Windows folder settings
 ]
 
-/**
- * Recursively reads a directory and returns an array of absolute file paths.
- *
- * @param directoryPath - The path to the directory to read.
- * @param excludedPaths - Nested array of paths to ignore.
- * @returns A promise that resolves to an array of absolute file paths.
- * @throws Error if the directory cannot be read.
- */
+/** Recursively reads files, pruning excluded directories before opening them. Never follows symlinks. */
 export const readDirectory = async (directoryPath: string, excludedPaths: string[][] = []) => {
-	try {
-		const filePaths = await fs
-			.readdir(directoryPath, { withFileTypes: true, recursive: true })
-			.then((entries) => entries.filter((entry) => !OS_GENERATED_FILES.includes(entry.name)))
-			.then((entries) => entries.filter((entry) => entry.isFile()))
-			.then((files) =>
-				files.map((file) => {
-					const resolvedPath = workspaceResolver.resolveWorkspacePath(
-						file.parentPath,
-						file.name,
-						"Utils.fs.readDirectory",
-					)
-					return typeof resolvedPath === "string" ? resolvedPath : resolvedPath.absolutePath
-				}),
-			)
-			.then((filePaths) =>
-				filePaths.filter((filePath) => {
-					if (excludedPaths.length === 0) {
-						return true
-					}
-
-					for (const excludedPathList of excludedPaths) {
-						const pathToSearchFor = path.sep + excludedPathList.join(path.sep) + path.sep
-						if (filePath.includes(pathToSearchFor)) {
-							return false
-						}
-					}
-
-					return true
-				}),
-			)
-
-		return filePaths
-	} catch (error: any) {
-		throw new Error(`Error reading directory at ${directoryPath}: ${error.message || error.code || error}`)
+	const files: string[] = []
+	const directories = [path.resolve(directoryPath)]
+	const signal = AbortSignal.timeout(30_000)
+	while (directories.length > 0) {
+		signal.throwIfAborted()
+		const directory = directories.pop()!
+		if (excludedPaths.some((segments) => `${directory}${path.sep}`.includes(path.sep + segments.join(path.sep) + path.sep)))
+			continue
+		for await (const entry of await fs.opendir(directory)) {
+			signal.throwIfAborted()
+			if (OS_GENERATED_FILES.includes(entry.name)) continue
+			const absolutePath = path.join(directory, entry.name)
+			if (entry.isDirectory()) directories.push(absolutePath)
+			else if (entry.isFile()) files.push(absolutePath)
+		}
 	}
+	return files
 }
 
 export async function getBinaryLocation(name: string): Promise<string> {

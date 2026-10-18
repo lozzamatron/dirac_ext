@@ -83,7 +83,8 @@ const HuggingFaceModelPicker: React.FC<HuggingFaceModelPickerProps> = ({ isPopup
 	}, [])
 
 	const allModels = useMemo(() => {
-		return { ...huggingFaceModels, ...dynamicModels }
+		const fallbackModels = Object.fromEntries(Object.entries(huggingFaceModels).filter(([, model]) => model.supportsTools))
+		return { ...fallbackModels, ...dynamicModels }
 	}, [dynamicModels])
 
 	const modelIds = useMemo(() => {

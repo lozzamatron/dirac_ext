@@ -1,4 +1,8 @@
 import { Logger } from "@/shared/services/Logger"
+import fs from "node:fs/promises"
+import path from "node:path"
+import { approvedWorkspaceCode } from "@/core/security/WorkspaceCodeApproval"
+import { HostProvider } from "@/hosts/host-provider"
 import { version as diracVersion } from "../../../package.json"
 import { getDistinctId } from "../../services/logging/distinctId"
 import { telemetryService } from "../../services/telemetry"
@@ -77,7 +81,7 @@ const exec = Symbol()
 
 /** Runs a hook script and returns the result. Stateless and reusable — each run() is independent. */
 export abstract class HookRunner<Name extends HookName> {
-	constructor(public readonly hookName: Name) {}
+	constructor(public readonly hookName: Name) { }
 
 	/** Execute the hook with the given parameters. Stateless — safe to call multiple times. */
 	async run(params: NamedHookInput<Name>): Promise<HookOutput> {
@@ -154,6 +158,19 @@ class StdioHookRunner<Name extends HookName> extends HookRunner<Name> {
 		// Check if already aborted before starting
 		if (this.abortSignal?.aborted) throw HookExecutionError.cancellation(this.scriptPath)
 
+		let launchPath = this.scriptPath
+		let snapshotDir: string | undefined
+		if (this.source === "workspace") {
+			if (!this.cwd) return HookOutput.create({ cancel: false })
+			const approved = await approvedWorkspaceCode(this.cwd, this.scriptPath, undefined, true)
+			if (!approved) return HookOutput.create({ cancel: false })
+			const base = path.join(HostProvider.get().globalStorageFsPath, "security", "hook-snapshots")
+			await fs.mkdir(base, { recursive: true })
+			snapshotDir = await fs.mkdtemp(path.join(base, "hook-"))
+			launchPath = path.join(snapshotDir, path.basename(this.scriptPath))
+			await fs.writeFile(launchPath, approved.source, { mode: 0o700 })
+		}
+
 		// Serialize input to JSON — manually construct to preserve empty string fields (proto3 omits defaults)
 		const jsonObj = HookInput.toJSON(input) as Record<string, any>
 		if (jsonObj.userPromptSubmit && jsonObj.userPromptSubmit.prompt === undefined) {
@@ -162,7 +179,7 @@ class StdioHookRunner<Name extends HookName> extends HookRunner<Name> {
 		const inputJson = JSON.stringify(jsonObj)
 
 		// Create HookProcess for execution with streaming
-		const hookProcess = new HookProcess(this.scriptPath, HOOK_EXECUTION_TIMEOUT_MS, this.abortSignal, this.cwd)
+		const hookProcess = new HookProcess(launchPath, HOOK_EXECUTION_TIMEOUT_MS, this.abortSignal, this.cwd)
 		if (this.streamCallback) {
 			const callback = this.streamCallback
 			hookProcess.on("line", (line: string, stream: "stdout" | "stderr") => {
@@ -235,6 +252,8 @@ class StdioHookRunner<Name extends HookName> extends HookRunner<Name> {
 			// Generic execution error — include hook name
 			if (taskId) HookTelemetryRecorder.captureGenericError(taskId, telemetryCtx, durationMs, exitCode, error)
 			throw HookExecutionError.execution(this.scriptPath, exitCode ?? 1, stderr, this.hookName)
+		} finally {
+			if (snapshotDir) await fs.rm(snapshotDir, { recursive: true, force: true })
 		}
 	}
 }

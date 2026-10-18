@@ -1,5 +1,5 @@
-import { setTimeout as setTimeoutPromise } from "node:timers/promises"
 import type { ApiHandler } from "@core/api"
+import { getApiRequestRetryDelay, MAX_API_REQUEST_RETRIES } from "@core/api/ApiRequestRetryPolicy"
 import type { ApiStream } from "@core/api/transform/stream"
 import { formatResponse } from "@core/formatResponse"
 import type { ICheckpointManager } from "@integrations/checkpoints/types"
@@ -8,13 +8,16 @@ import { DiracError, DiracErrorType } from "@services/error"
 import { CardStatus, DiracMessageType, TaskStatus } from "@shared/ExtensionMessage"
 import { DiracContent, DiracTextContentBlock } from "@shared/messages/content"
 import type { DiracMessageModelInfo } from "@shared/messages/metrics"
+import type { Mode } from "@shared/storage/types"
 import { isMutatingTool } from "@shared/tools"
 import { DiracAskResponse } from "@shared/WebviewMessage"
 import pWaitFor from "p-wait-for"
+import { sleep } from "@/utils/retry"
 import type { MessageStateHandler } from "./message-state"
 import type { StreamingMetricsManager } from "./StreamingMetricsManager"
 import type { TaskMessenger } from "./TaskMessenger"
 import type { TaskState } from "./TaskState"
+import { clearAskResponse } from "./TaskUserInput"
 import { ToolSkippedByUserMessage } from "./tools/types/ToolSkippedByUserMessage"
 import { updateApiReqMsg } from "./utils"
 import type { TaskExecutionProfile } from "./TaskExecutionProfile"
@@ -25,6 +28,7 @@ export interface TaskRequestOutcomeContext {
 	taskMessenger: TaskMessenger
 	api: ApiHandler
 	taskId: string
+	mode: Mode
 	executionProfile: TaskExecutionProfile
 	checkpointManager?: ICheckpointManager
 	postStateToWebview: () => Promise<void>
@@ -88,9 +92,9 @@ export async function handleApiRequestError(
 	const isPaymentError = diracError.isErrorType(DiracErrorType.Payment)
 
 	let response: DiracAskResponse
-	if (!isAuthError && !isPaymentError && ctx.taskState.apiErrorRetryAttempts < 3) {
+	if (!isAuthError && !isPaymentError && ctx.taskState.apiErrorRetryAttempts < MAX_API_REQUEST_RETRIES) {
 		ctx.taskState.apiErrorRetryAttempts++
-		const delay = 2000 * 2 ** (ctx.taskState.apiErrorRetryAttempts - 1)
+		const delay = getApiRequestRetryDelay(ctx.taskState.apiErrorRetryAttempts)
 
 		await updateApiReqMsg({
 			messageStateHandler: ctx.messageStateHandler,
@@ -112,7 +116,7 @@ export async function handleApiRequestError(
 		const autoRetryCard = await ctx.taskMessenger.createCard({
 			status: CardStatus.PENDING,
 			header: "API Error (Retrying)",
-			body: `API Error (attempt ${ctx.taskState.apiErrorRetryAttempts}/3). Retrying in ${delay / 1000}s...`,
+			body: `API Error (retry ${ctx.taskState.apiErrorRetryAttempts}/${MAX_API_REQUEST_RETRIES}). Retrying in ${delay / 1000}s...`,
 		})
 
 		const autoRetryApiStatus = ctx.messageStateHandler.getLatestApiStatusMessage()
@@ -122,25 +126,25 @@ export async function handleApiRequestError(
 
 		const deadline = Date.now() + delay
 		while (Date.now() < deadline && !ctx.taskState.abort) {
-			await setTimeoutPromise(Math.min(200, deadline - Date.now()))
+			await sleep(Math.min(200, deadline - Date.now()))
 		}
 		// If the user aborted during the retry delay, stop retrying
 		if (ctx.taskState.abort) {
 			await autoRetryCard.update({
 				header: "API Error (Cancelled)",
-				body: `API Error (attempt ${ctx.taskState.apiErrorRetryAttempts}/3). Cancelled.`,
+				body: `API Error (retry ${ctx.taskState.apiErrorRetryAttempts}/${MAX_API_REQUEST_RETRIES}). Cancelled.`,
 			})
 			await autoRetryCard.finalize(CardStatus.CANCELLED)
 			throw new Error("Task instance aborted")
 		}
-		await autoRetryCard.update({ body: `API Error (attempt ${ctx.taskState.apiErrorRetryAttempts}/3). Retrying...` })
+		await autoRetryCard.update({ body: `API Error (retry ${ctx.taskState.apiErrorRetryAttempts}/${MAX_API_REQUEST_RETRIES}). Retrying...` })
 		await autoRetryCard.finalize(CardStatus.ERROR)
 	} else {
 		if (!isAuthError && !isPaymentError) {
 			await ctx.taskMessenger.createCard({
 				status: CardStatus.ERROR,
 				header: "API Error (Retries Exhausted)",
-				body: `The API request failed after 3 attempts. ${diracError.toDisplayMessage()}`,
+				body: `The API request failed after ${MAX_API_REQUEST_RETRIES} retries. ${diracError.toDisplayMessage()}`,
 			})
 		}
 		if (isPaymentError) {
@@ -219,10 +223,7 @@ export async function processStreamResult(
 	},
 ): Promise<boolean> {
 	if (params.assistantHasContent) {
-		ctx.taskState.askResponse = undefined
-		ctx.taskState.askResponseText = undefined
-		ctx.taskState.askResponseImages = undefined
-		ctx.taskState.askResponseFiles = undefined
+		clearAskResponse(ctx.taskState)
 		ctx.taskState.status = TaskStatus.AWAITING_USER_INPUT
 
 		await pWaitFor(() => ctx.taskState.userMessageContentReady)
@@ -248,7 +249,7 @@ export async function processStreamResult(
 				type: "text",
 				text: hitTokenLimit
 					? "You reached the output token limit. Continue from where you stopped; restart an interrupted tool call, or call respond with operation 'complete' if finished."
-					: formatResponse.noToolsUsed(ctx.taskState.useNativeToolCalls),
+					: formatResponse.noToolsUsed(ctx.taskState.useNativeToolCalls, ctx.mode),
 			} as DiracTextContentBlock)
 			ctx.taskState.consecutiveMistakeCount++
 		}

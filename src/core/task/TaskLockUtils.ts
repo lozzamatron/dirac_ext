@@ -1,36 +1,21 @@
-import { releaseFolderLock, tryAcquireFolderLockWithRetry } from "@/core/locks/FolderLockUtils"
-import type { FolderLockOptions, FolderLockWithRetryResult } from "@/core/locks/types"
+import fs from "node:fs/promises"
+import path from "node:path"
+import { lock, type ReleaseLock } from "proper-lockfile"
 
-/**
- * Base path for task folders
- */
-const TASKS_BASE_PATH = "~/.dirac/data/tasks"
-
-/**
- * Attempt to acquire task folder lock with retry logic.
- * This is a convenience wrapper around the generic folder lock utility
- * that uses the taskId as the lock target.
- *
- * @param taskId - The unique identifier for the task
- * @returns Promise<FolderLockWithRetryResult> with acquisition status and any conflicting lock info
- */
-export async function tryAcquireTaskLockWithRetry(taskId: string): Promise<FolderLockWithRetryResult> {
-	const options: FolderLockOptions = {
-		lockTarget: `${TASKS_BASE_PATH}/${taskId}`,
-		heldBy: taskId, // will be automatically swapped for instance address in SqliteLockManager
+/** Acquires exclusive task ownership across all hosts before any history is restored or written. */
+export async function acquireTaskLock(taskDirectory: string): Promise<ReleaseLock> {
+	await fs.mkdir(path.dirname(taskDirectory), { recursive: true })
+	try {
+		return await lock(taskDirectory, {
+			realpath: false,
+			stale: 30_000,
+			update: 5_000,
+			retries: 0,
+		})
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ELOCKED") throw error
+		throw new Error("This task is already open in another Dirac instance. Close it there before opening it here.", {
+			cause: error,
+		})
 	}
-
-	const result = await tryAcquireFolderLockWithRetry(options)
-	return { acquired: result.acquired, skipped: result.skipped, conflictingLock: result.conflictingLock }
-}
-
-/**
- * Release task folder lock safely.
- * This is a convenience wrapper around the generic folder lock utility
- * that uses the taskId as the lock target.
- *
- * @param taskId - The unique identifier for the task
- */
-export async function releaseTaskLock(taskId: string): Promise<void> {
-	await releaseFolderLock(taskId, `${TASKS_BASE_PATH}/${taskId}`)
 }

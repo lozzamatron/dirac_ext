@@ -6,12 +6,12 @@ import type { StateManager } from "@core/storage/StateManager"
 import type { ApiProvider } from "@shared/api"
 import { ShowMessageType } from "@shared/proto/host/window"
 import axios from "axios"
-import open from "open"
 import { HostProvider } from "@/hosts/host-provider"
 import { githubCopilotAuthManager } from "@/integrations/github-copilot/auth"
 import { getErrorMessage } from "@/shared/errors"
 import { getAxiosSettings } from "@/shared/net"
 import { Logger } from "@/shared/services/Logger"
+import { openExternal } from "@/utils/env"
 
 export interface AuthControllerDependencies {
 	stateManager: StateManager
@@ -59,9 +59,11 @@ export class AuthController {
 			const response = await HostProvider.window.showMessage({
 				type: ShowMessageType.INFORMATION,
 				message: `GitHub Copilot: Enter code ${data.user_code} at ${data.verification_uri}`,
+				options: { items: [openUrl] },
 			})
+			if (response.selectedOption !== openUrl) return
 
-			await open(data.verification_uri)
+			await openExternal(data.verification_uri)
 
 			githubCopilotAuthManager
 				.pollForToken(data.device_code, data.interval)

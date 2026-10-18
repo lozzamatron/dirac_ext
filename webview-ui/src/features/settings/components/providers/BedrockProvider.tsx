@@ -18,6 +18,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip"
 import { DebouncedTextField } from "../common/DebouncedTextField"
 import { ModelInfoView } from "../common/ModelInfoView"
 import { DropdownContainer } from "../common/ModelSelector"
+import ReasoningEffortSelector from "../ReasoningEffortSelector"
 import ThinkingBudgetSlider from "../ThinkingBudgetSlider"
 import { useApiConfigurationHandlers } from "../utils/useApiConfigurationHandlers"
 
@@ -521,12 +522,19 @@ export const BedrockProvider = ({ showModelOptions, isPopup, currentMode }: Bedr
 						</div>
 					)}
 
-					{(SUPPORTED_BEDROCK_THINKING_MODELS.includes(selectedModelId) ||
+					{selectedModelInfo.thinkingAlwaysOn ? (
+						<ReasoningEffortSelector
+							allowedEfforts={selectedModelInfo.reasoningEffortOptions}
+							currentMode={currentMode}
+							defaultEffort={selectedModelInfo.defaultReasoningEffort}
+							description="Thinking is always on. Effort controls depth, latency, and cost."
+						/>
+					) : SUPPORTED_BEDROCK_THINKING_MODELS.includes(selectedModelId) ||
 						(modeFields.awsBedrockCustomSelected &&
 							modeFields.awsBedrockCustomModelBaseId &&
-							SUPPORTED_BEDROCK_THINKING_MODELS.includes(modeFields.awsBedrockCustomModelBaseId))) && (
-							<ThinkingBudgetSlider currentMode={currentMode} />
-						)}
+							SUPPORTED_BEDROCK_THINKING_MODELS.includes(modeFields.awsBedrockCustomModelBaseId)) ? (
+						<ThinkingBudgetSlider currentMode={currentMode} />
+					) : null}
 
 					<ModelInfoView isPopup={isPopup} modelInfo={selectedModelInfo} selectedModelId={selectedModelId} />
 				</>

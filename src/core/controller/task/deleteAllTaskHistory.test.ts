@@ -49,7 +49,7 @@ describe("deleteAllTaskHistory", () => {
 					.stub()
 					.withArgs("taskHistory")
 					.callsFake(() => taskHistory),
-				replaceTaskHistory,
+				removeTaskHistoryItems: replaceTaskHistory,
 				flushPendingState: sinon.stub().resolves(),
 			},
 		} as any
@@ -143,14 +143,14 @@ describe("deleteAllTaskHistory", () => {
 
 		assert.equal(result.tasksDeleted, 1)
 		sinon.assert.calledOnce(clearTask)
-		sinon.assert.calledOnceWithExactly(replaceTaskHistory, [taskHistory[0], taskHistory[1]])
+		sinon.assert.calledOnceWithExactly(replaceTaskHistory, ["ordinary"])
 		sinon.assert.calledOnce(postStateToWebview)
 		assert.equal(await exists(path.join(storagePath, "tasks", "favorite")), true)
 		assert.equal(await exists(path.join(storagePath, "tasks", "late-favorite")), true)
 		assert.equal(await exists(path.join(storagePath, "tasks", "ordinary")), false)
 	})
 
-	it("deletes all history, task files, and checkpoint files after confirmation", async () => {
+	it("deletes selected run directories without deleting shared storage roots", async () => {
 		taskHistory = [
 			{ id: "favorite", isFavorited: true },
 			{ id: "ordinary", isFavorited: false },
@@ -165,9 +165,11 @@ describe("deleteAllTaskHistory", () => {
 
 		assert.equal(result.tasksDeleted, 2)
 		sinon.assert.calledOnce(clearTask)
-		sinon.assert.calledOnceWithExactly(replaceTaskHistory, [])
+		sinon.assert.calledOnceWithExactly(replaceTaskHistory, ["favorite", "ordinary"])
 		sinon.assert.calledOnce(postStateToWebview)
-		assert.equal(await exists(path.join(storagePath, "tasks")), false)
-		assert.equal(await exists(path.join(storagePath, "checkpoints")), false)
+		assert.equal(await exists(path.join(storagePath, "tasks", "favorite")), false)
+		assert.equal(await exists(path.join(storagePath, "tasks", "ordinary")), false)
+		assert.equal(await exists(path.join(storagePath, "tasks")), true)
+		assert.equal(await exists(path.join(storagePath, "checkpoints")), true)
 	})
 })

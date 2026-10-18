@@ -7,7 +7,7 @@ import {
 	openAiCodexModels,
 } from "@shared/api"
 import { jsonHeaders } from "@shared/net"
-import { normalizeOpenaiReasoningEffort } from "@shared/storage/types"
+import { resolveReasoningEffortForModel } from "@shared/utils/reasoning-support"
 import OpenAI from "openai"
 import type { ChatCompletionTool } from "openai/resources/chat/completions"
 import * as os from "os"
@@ -16,6 +16,7 @@ import { openAiCodexUsageService } from "@/integrations/openai-codex/OpenAiCodex
 import { openAiCodexOAuthManager } from "@/integrations/openai-codex/oauth"
 import { buildExternalBasicHeaders } from "@/services/EnvUtils"
 import { featureFlagsService } from "@/services/feature-flags"
+import { npmPackageVersion } from "@/shared/config/environment"
 import { getErrorMessage } from "@/shared/errors"
 import { DiracStorageMessage } from "@/shared/messages/content"
 import { fetch } from "@/shared/net"
@@ -30,6 +31,7 @@ import {
 	ApiHandler,
 	CommonApiHandlerOptions,
 } from "../"
+import { ApiConfigurationError, ApiConfigurationErrorCode } from "../ApiConfigurationError"
 import { RetriableError } from "../retry"
 import { convertToOpenAIResponsesInput } from "../transform/openai-response-format"
 import { ApiStream } from "../transform/stream"
@@ -124,7 +126,7 @@ export class OpenAiCodexHandler implements ApiHandler {
 					}),
 					parallelToolCalls: this.shouldEnableParallelToolCalling(),
 					inferenceSpeed: this.options.inferenceSpeed,
-					reasoningEffort: normalizeOpenaiReasoningEffort(this.options.reasoningEffort),
+					reasoningEffort: resolveReasoningEffortForModel(model.id, model.info, this.options.reasoningEffort),
 					usePersistedReasoning,
 				}),
 			)
@@ -211,7 +213,7 @@ export class OpenAiCodexHandler implements ApiHandler {
 				const codexHeaders: Record<string, string> = {
 					originator: "dirac",
 					session_id: this.sessionId,
-					"User-Agent": `dirac/${process.env.npm_package_version || "1.0.0"} (${os.platform()} ${os.release()}; ${os.arch()}) node/${process.version.slice(1)}`,
+					"User-Agent": `dirac/${npmPackageVersion()} (${os.platform()} ${os.release()}; ${os.arch()}) node/${process.version.slice(1)}`,
 					...(accountId ? { "ChatGPT-Account-Id": accountId } : {}),
 					...buildExternalBasicHeaders(),
 				}
@@ -356,8 +358,8 @@ export class OpenAiCodexHandler implements ApiHandler {
 		tools: CodexTool[] | undefined,
 		options: CodexRequestBodyOptions,
 	): any {
-		const reasoningEffort = normalizeOpenaiReasoningEffort(this.options.reasoningEffort)
-		const includeReasoning = reasoningEffort !== "none"
+		const reasoningEffort = resolveReasoningEffortForModel(model.id, model.info, this.options.reasoningEffort)
+		const includeReasoning = reasoningEffort !== undefined && reasoningEffort !== "none"
 		const includeReasoningConfig = includeReasoning || options.usePersistedReasoning
 		const serviceTier = options.includeInferenceSpeed ? this.resolveServiceTier(model.info) : undefined
 
@@ -437,7 +439,7 @@ export class OpenAiCodexHandler implements ApiHandler {
 			const codexHeaders: Record<string, string> = {
 				originator: "dirac",
 				session_id: this.sessionId,
-				"User-Agent": `dirac/${process.env.npm_package_version || "1.0.0"} (${os.platform()} ${os.release()}; ${os.arch()}) node/${process.version.slice(1)}`,
+				"User-Agent": `dirac/${npmPackageVersion()} (${os.platform()} ${os.release()}; ${os.arch()}) node/${process.version.slice(1)}`,
 				...(accountId ? { "ChatGPT-Account-Id": accountId } : {}),
 				...buildExternalBasicHeaders(),
 			}
@@ -611,7 +613,7 @@ export class OpenAiCodexHandler implements ApiHandler {
 			Authorization: `Bearer ${accessToken}`,
 			originator: "dirac",
 			session_id: this.sessionId,
-			"User-Agent": `dirac/${process.env.npm_package_version || "1.0.0"} (${os.platform()} ${os.release()}; ${os.arch()}) node/${process.version.slice(1)}`,
+			"User-Agent": `dirac/${npmPackageVersion()} (${os.platform()} ${os.release()}; ${os.arch()}) node/${process.version.slice(1)}`,
 			...(accountId ? { "ChatGPT-Account-Id": accountId } : {}),
 			...buildExternalBasicHeaders(),
 		}
@@ -649,9 +651,15 @@ export class OpenAiCodexHandler implements ApiHandler {
 
 	getModel(): { id: OpenAiCodexModelId; info: OpenAiCodexModelInfo } {
 		const modelId = this.options.apiModelId
-		const id = modelId && modelId in openAiCodexModels ? (modelId as OpenAiCodexModelId) : openAiCodexDefaultModelId
+		if (modelId !== undefined && !Object.hasOwn(openAiCodexModels, modelId)) {
+			throw new ApiConfigurationError(
+				ApiConfigurationErrorCode.ModelUnavailable,
+				`Unknown OpenAI Codex model ID: ${modelId}`,
+				"Select a supported ChatGPT model ID before retrying (for example, gpt-6-luna rather than luna).",
+			)
+		}
+		const id = (modelId ?? openAiCodexDefaultModelId) as OpenAiCodexModelId
 		const info: OpenAiCodexModelInfo = openAiCodexModels[id]
-
 		return { id, info: { ...info, supportsStrictTools: true } }
 	}
 }

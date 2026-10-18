@@ -1,4 +1,4 @@
-import { HuggingFaceModelId, huggingFaceDefaultModelId, huggingFaceModels, ModelInfo } from "@shared/api"
+import { huggingFaceDefaultModelId, huggingFaceModels, type ModelInfo } from "@shared/api"
 import { calculateApiCostOpenAI } from "@utils/cost"
 import OpenAI from "openai"
 import type { ChatCompletionTool as OpenAITool } from "openai/resources/chat/completions"
@@ -19,7 +19,7 @@ interface HuggingFaceHandlerOptions extends CommonApiHandlerOptions {
 export class HuggingFaceHandler implements ApiHandler {
 	private options: HuggingFaceHandlerOptions
 	private client: OpenAI | undefined
-	private cachedModel: { id: HuggingFaceModelId; info: ModelInfo } | undefined
+	private cachedModel: { id: string; info: ModelInfo } | undefined
 
 	constructor(options: HuggingFaceHandlerOptions) {
 		this.options = options
@@ -66,83 +66,46 @@ export class HuggingFaceHandler implements ApiHandler {
 
 	@withRetry()
 	async *createMessage(systemPrompt: string, messages: DiracStorageMessage[], tools?: OpenAITool[]): ApiStream {
-		try {
-			const client = this.ensureClient()
-			const model = this.getModel()
+		const model = this.getModel()
+		if (tools?.length && model.info.supportsTools === false) {
+			throw new Error(`Hugging Face model ${model.id} does not support tools; select a tool-capable model`)
+		}
 
-			const openAiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-				{ role: "system", content: systemPrompt },
-				...convertToOpenAiMessages(messages, undefined, this.getModel().info.supportsImages !== false),
-			]
+		const openAiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+			{ role: "system", content: systemPrompt },
+			...convertToOpenAiMessages(messages, undefined, model.info.supportsImages !== false),
+		]
 
-			const requestParams = {
-				model: model.id,
-				max_tokens: model.info.maxTokens,
-				messages: openAiMessages,
-				stream: true,
-				stream_options: { include_usage: true },
-				temperature: 0,
-				...getOpenAIToolParams(tools),
-			}
+		const stream = await this.ensureClient().chat.completions.create({
+			model: model.id,
+			// Provider context limits include the prompt. Cap old static and saved limits to leave room for input.
+			...(model.info.maxTokens ? { max_tokens: Math.min(8192, model.info.maxTokens) } : {}),
+			messages: openAiMessages,
+			stream: true,
+			stream_options: { include_usage: true },
+			...getOpenAIToolParams(tools),
+		})
 
-			const toolCallProcessor = new ToolCallProcessor()
-			const stream = (await client.chat.completions.create(requestParams)) as any
-
-			let _chunkCount = 0
-			let _totalContent = ""
-
-			for await (const chunk of stream) {
-				_chunkCount++
-				const delta = chunk.choices?.[0]?.delta
-				if (delta?.content) {
-					_totalContent += delta.content
-
-					yield {
-						type: "text",
-						text: delta.content,
-					}
-				}
-
-				if (delta?.tool_calls) {
-					yield* toolCallProcessor.processToolCallDeltas(delta.tool_calls)
-				}
-
-				if (chunk.usage) {
-					yield* this.yieldUsage(model.info, chunk.usage)
-				}
-			}
-		} catch (error: any) {
-			throw error
+		const toolCallProcessor = new ToolCallProcessor()
+		for await (const chunk of stream) {
+			const delta = chunk.choices?.[0]?.delta
+			if (delta?.content) yield { type: "text", text: delta.content }
+			if (delta?.tool_calls) yield* toolCallProcessor.processToolCallDeltas(delta.tool_calls)
+			if (chunk.usage) yield* this.yieldUsage(model.info, chunk.usage)
 		}
 	}
 
-	getModel(): { id: HuggingFaceModelId; info: ModelInfo } {
-		// Return cached model if available
-		if (this.cachedModel) {
-			return this.cachedModel
+	getModel(): { id: string; info: ModelInfo } {
+		if (this.cachedModel) return this.cachedModel
+
+		const id = this.options.huggingFaceModelId || huggingFaceDefaultModelId
+		const staticInfo = huggingFaceModels[id as keyof typeof huggingFaceModels]
+		this.cachedModel = {
+			id,
+			info: this.options.huggingFaceModelInfo ?? staticInfo ?? {
+				supportsPromptCache: false,
+			},
 		}
-
-		const modelId = this.options.huggingFaceModelId
-
-		// List all available models for debugging
-		const _availableModels = Object.keys(huggingFaceModels)
-		let result: { id: HuggingFaceModelId; info: ModelInfo }
-
-		if (modelId && modelId in huggingFaceModels) {
-			const id = modelId as HuggingFaceModelId
-			const modelInfo = huggingFaceModels[id]
-			result = { id, info: modelInfo }
-		} else {
-			const defaultInfo = huggingFaceModels[huggingFaceDefaultModelId]
-			result = {
-				id: huggingFaceDefaultModelId,
-				info: defaultInfo,
-			}
-		}
-
-		// Cache the result for future calls
-		this.cachedModel = result
-
-		return result
+		return this.cachedModel
 	}
 }

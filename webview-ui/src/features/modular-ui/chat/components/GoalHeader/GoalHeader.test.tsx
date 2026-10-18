@@ -57,6 +57,12 @@ afterEach(() => {
 })
 
 describe("GoalHeader", () => {
+	it("offers ownership-checked resume for an active record without a local coordinator", () => {
+		render(<GoalHeader goal={{ ...createGoal("working"), hasLocalExecution: false }} />)
+		expect(screen.getByRole("button", { name: "Resume Goal" })).toBeInTheDocument()
+		expect(screen.queryByRole("button", { name: "Pause Goal" })).not.toBeInTheDocument()
+	})
+
 	it("renders a plain-text objective preview and keeps Goal disclosure state separate from task expansion", async () => {
 		useSettingsStore.setState({ expandTaskHeader: true })
 		const user = userEvent.setup()

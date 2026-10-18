@@ -1,13 +1,11 @@
 import { fileExistsAtPath } from "@utils/fs"
 import { retryWithBackoff } from "@utils/retry"
-import fs from "fs/promises"
-import { globby } from "globby"
 import * as path from "path"
 import simpleGit, { type SimpleGit } from "simple-git"
 import { telemetryService } from "@/services/telemetry"
-import { getErrorMessage } from "@/shared/errors"
+import { NestedGitRepositories } from "./NestedGitRepositories"
 import { Logger } from "@/shared/services/Logger"
-import { getLfsPatterns, writeExcludesFile } from "./CheckpointExclusions"
+import { getDefaultExclusions, getLfsPatterns, writeExcludesFile } from "./CheckpointExclusions"
 
 interface CheckpointAddResult {
 	success: boolean
@@ -28,7 +26,7 @@ interface CheckpointAddResult {
  */
 export class GitOperations {
 	private cwd: string
-	private nestedGitCache: string[] | undefined
+	private nestedRepositories!: NestedGitRepositories
 
 	/**
 	 * Creates a new GitOperations instance.
@@ -58,17 +56,24 @@ export class GitOperations {
 	 * - Unable to create initial commit
 	 * - LFS pattern setup fails
 	 */
-	public async initShadowGit(gitPath: string, cwd: string, taskId: string): Promise<string> {
+	public async initShadowGit(
+		gitPath: string,
+		cwd: string,
+		taskId: string,
+		signal = AbortSignal.timeout(15_000),
+	): Promise<string> {
 		Logger.info(`Initializing shadow git`)
-		// Clean up any leftover .git_disabled directories from a previous crash/interruption.
-		// If addCheckpointFiles() was interrupted mid disable/enable cycle, nested repos may still be disabled.
-		await this.renameNestedGitRepos(false).catch((error) => {
-			Logger.warn("CheckpointTracker failed best-effort nested git cleanup during shadow git init:", error)
-		})
+		this.nestedRepositories = new NestedGitRepositories(
+			cwd,
+			path.join(path.dirname(gitPath), "nested-git-recovery.json"),
+			getDefaultExclusions(),
+		)
+		await this.nestedRepositories.recover(signal)
+		signal.throwIfAborted()
 
 		// If repo exists, just verify worktree
 		if (await fileExistsAtPath(gitPath)) {
-			const git = simpleGit(path.dirname(gitPath))
+			const git = simpleGit(path.dirname(gitPath), { abort: signal })
 			const worktree = await git.getConfig("core.worktree")
 			if (worktree.value !== cwd) {
 				throw new Error("Checkpoints can only be used in the original workspace: " + worktree.value)
@@ -86,7 +91,7 @@ export class GitOperations {
 		const checkpointsDir = path.dirname(gitPath)
 		Logger.warn(`Creating new shadow git in ${checkpointsDir}`)
 
-		const git = simpleGit(checkpointsDir)
+		const git = simpleGit(checkpointsDir, { abort: signal })
 		await git.init()
 
 		// Configure repo with git settings
@@ -99,7 +104,7 @@ export class GitOperations {
 		const lfsPatterns = await getLfsPatterns(cwd)
 		await writeExcludesFile(gitPath, lfsPatterns)
 
-		const addFilesResult = await this.addCheckpointFiles(git)
+		const addFilesResult = await this.addCheckpointFiles(git, signal)
 		if (!addFilesResult.success) {
 			Logger.error("Failed to add at least one file(s) to checkpoints shadow git")
 			throw new Error("Failed to add at least one file(s) to checkpoints shadow git")
@@ -136,74 +141,17 @@ export class GitOperations {
 		}
 	}
 
-	/**
-	 * Since we use git to track checkpoints, we need to temporarily disable nested git repos to work around git's
-	 * requirement of using submodules for nested repos.
-	 *
-	 * This method renames nested .git directories by adding/removing a suffix to temporarily disable/enable them.
-	 * The root .git directory is preserved. Uses VS Code's workspace API to find nested .git directories and
-	 * only processes actual directories (not files named .git).
-	 *
-	 * @param disable - If true, adds suffix to disable nested git repos. If false, removes suffix to re-enable them.
-	 * @throws Error if renaming any .git directory fails
-	 */
-	public async renameNestedGitRepos(disable: boolean) {
-		let gitPaths: string[]
-
-		if (disable || !this.nestedGitCache) {
-			// Find all .git directories that are not at the root level
-			gitPaths = await globby("**/.git" + (disable ? "" : GIT_DISABLED_SUFFIX), {
-				cwd: this.cwd,
-				onlyDirectories: true,
-				ignore: [".git", "**/node_modules/**"], // Ignore root level .git and node_modules
-				dot: true,
-				markDirectories: false,
-				suppressErrors: true,
-			})
-
-			if (disable) {
-				this.nestedGitCache = gitPaths
-			}
-		} else {
-			// Use cached paths for re-enabling to avoid another expensive globby scan
-			gitPaths = this.nestedGitCache.map((p) => p + GIT_DISABLED_SUFFIX)
-		}
-
-		// For each nested .git directory, rename it based on operation in parallel
-		await Promise.all(
-			gitPaths.map(async (gitPath) => {
-				const fullPath = path.join(this.cwd, gitPath)
-				let newPath: string
-				if (disable) {
-					newPath = fullPath + GIT_DISABLED_SUFFIX
-				} else {
-					newPath = fullPath.endsWith(GIT_DISABLED_SUFFIX) ? fullPath.slice(0, -GIT_DISABLED_SUFFIX.length) : fullPath
-				}
-
-				try {
-					await fs.rename(fullPath, newPath)
-					Logger.log(`CheckpointTracker ${disable ? "disabled" : "enabled"} nested git repo ${gitPath}`)
-				} catch (error) {
-					Logger.error(
-						`CheckpointTracker failed to ${disable ? "disable" : "enable"} nested git repo ${gitPath}:`,
-						error,
-					)
-					throw new Error(
-						`Failed to ${disable ? "disable" : "enable"} nested git repo ${gitPath}: ${getErrorMessage(error)}`,
-					)
-				}
-			}),
-		)
-		if (!disable) {
-			this.nestedGitCache = undefined // Clear cache after re-enabling
-		}
+	/** Restore is deliberately not cancelled: every recorded rename must be undone before returning. */
+	public async renameNestedGitRepos(disable: boolean, signal = AbortSignal.timeout(10_000)): Promise<void> {
+		if (disable) await this.nestedRepositories.disable(signal)
+		else await this.nestedRepositories.restore()
 	}
 
-	public async addCheckpointFiles(git: SimpleGit): Promise<CheckpointAddResult> {
+	public async addCheckpointFiles(git: SimpleGit, signal = AbortSignal.timeout(10_000)): Promise<CheckpointAddResult> {
 		const startTime = performance.now()
 		try {
 			// Update exclude patterns before each commit
-			await this.renameNestedGitRepos(true)
+			await this.renameNestedGitRepos(true, signal)
 			Logger.info("Starting checkpoint add operation...")
 
 			// Optimization: Use git status --porcelain to find changed files
@@ -250,8 +198,6 @@ export class GitOperations {
 						`CheckpointTracker re-enable nested git repos failed on attempt ${attempt}/${maxAttempts}. Retrying in ${delayMs}ms`,
 					)
 				},
-			}).catch((error) => {
-				Logger.error("CheckpointTracker failed to re-enable nested git repos after retries:", error)
 			})
 		}
 	}

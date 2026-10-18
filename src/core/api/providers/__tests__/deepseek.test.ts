@@ -85,7 +85,7 @@ describe("DeepSeekHandler", () => {
 
 		const request = create.firstCall.args[0]
 		request.model.should.equal("deepseek-flash")
-		request.max_tokens.should.equal(384_000)
+		request.should.not.have.property("max_tokens")
 		request.messages.should.deepEqual([
 			{ role: "system", content: "system" },
 			{
@@ -234,6 +234,7 @@ describe("DeepSeekHandler", () => {
 				request!.model.should.equal(apiModelId)
 				request!.thinking.should.deepEqual({ type: reasoningEffort === "none" ? "disabled" : "enabled" })
 				request!.should.not.have.property("extra_body")
+				request!.should.not.have.property("max_tokens")
 				if (reasoningEffort === "none") request!.should.not.have.property("reasoning_effort")
 				else request!.reasoning_effort.should.equal("high")
 			})

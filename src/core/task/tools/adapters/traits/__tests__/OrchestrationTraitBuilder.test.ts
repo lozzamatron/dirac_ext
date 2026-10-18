@@ -67,3 +67,130 @@ describe("OrchestrationTraitBuilder Utility subagent routing", () => {
 		assert.equal(includeHistory, true)
 	})
 })
+
+// SubagentUsagePublisher formats these fields for the usage card, so fixtures need the full shape.
+const SUBAGENT_STATS = {
+	toolCalls: 0,
+	inputTokens: 10,
+	outputTokens: 5,
+	cacheWriteTokens: 0,
+	cacheReadTokens: 0,
+	totalCost: 0.5,
+	contextTokens: 15,
+	contextWindow: 1000,
+	contextUsagePercentage: 1.5,
+}
+
+describe("OrchestrationTraitBuilder runSubagent abort signal propagation (FB-29)", () => {
+	let abortStub: sinon.SinonStub
+	let runStub: sinon.SinonStub
+
+	beforeEach(() => {
+		sinon.stub(AgentConfigLoader, "getInstance").returns({
+			getCachedConfig: () => undefined,
+		} as unknown as AgentConfigLoader)
+		sinon.stub(SubagentRunRecorder, "create").resolves({ flush: sinon.stub().resolves() } as never)
+		abortStub = sinon.stub(SubagentRunner.prototype, "abort").resolves()
+		runStub = sinon.stub(SubagentRunner.prototype, "run")
+	})
+
+	afterEach(() => sinon.restore())
+
+	it("aborts the runner immediately when the signal is already aborted (pre-abort)", async () => {
+		const { config } = createMockTaskConfig()
+		const trait = buildOrchestrationTrait(config)
+
+		const controller = new AbortController()
+		controller.abort(new Error("Pre-aborted"))
+
+		runStub.resolves({ status: SubagentExecutionStatus.CANCELLED, stats: SUBAGENT_STATS } as never)
+
+		await trait.runSubagent("Investigate", { signal: controller.signal })
+
+		sinon.assert.calledOnce(abortStub)
+		sinon.assert.calledWith(abortStub, "Aborted by external signal")
+	})
+
+	it("does not enter the real runner lifecycle when already aborted", async () => {
+		abortStub.restore()
+		runStub.restore()
+		const { config } = createMockTaskConfig()
+		const runner = new SubagentRunner(config)
+		const executeRun = sinon.stub(runner as any, "executeRun").throws(new Error("must not start"))
+		await runner.abort("Aborted by external signal")
+
+		const result = await runner.run("Investigate", () => { })
+		assert.equal(result.status, SubagentExecutionStatus.CANCELLED)
+		assert.equal(result.error, "Aborted by external signal")
+		sinon.assert.notCalled(executeRun)
+	})
+
+	it("calls runner.abort() immediately when the signal aborts mid-run", async () => {
+		const { config } = createMockTaskConfig()
+		const trait = buildOrchestrationTrait(config)
+
+		const controller = new AbortController()
+		let releaseRun: (result: any) => void = () => { }
+		runStub.returns(
+			new Promise((resolve) => {
+				releaseRun = resolve
+			}),
+		)
+
+		const runPromise = trait.runSubagent("Investigate", { signal: controller.signal })
+
+		// Abort while the run is in-flight
+		controller.abort(new Error("Mid-run abort"))
+		await Promise.resolve()
+		await Promise.resolve()
+
+		sinon.assert.calledOnce(abortStub)
+
+		releaseRun({ status: SubagentExecutionStatus.CANCELLED, stats: SUBAGENT_STATS })
+		await runPromise
+	})
+
+	it("does not call runner.abort() when the signal aborts after the run completed (post-completion)", async () => {
+		const { config } = createMockTaskConfig()
+		const trait = buildOrchestrationTrait(config)
+
+		const controller = new AbortController()
+		runStub.resolves({ status: SubagentExecutionStatus.COMPLETED, result: "done", stats: SUBAGENT_STATS } as never)
+
+		await trait.runSubagent("Investigate", { signal: controller.signal })
+
+		// Late parent abort after the run finished
+		controller.abort(new Error("Late abort"))
+
+		sinon.assert.notCalled(abortStub)
+	})
+
+	it("runs normally without an abort signal", async () => {
+		const { config } = createMockTaskConfig()
+		const trait = buildOrchestrationTrait(config)
+
+		const completedResult = { status: SubagentExecutionStatus.COMPLETED, result: "done", stats: SUBAGENT_STATS }
+		runStub.resolves(completedResult as never)
+
+		const result = await trait.runSubagent("Investigate")
+
+		assert.equal(result, completedResult)
+		sinon.assert.notCalled(abortStub)
+	})
+
+	it("removes the abort listener after the run finishes so repeated runs don't leak listeners", async () => {
+		const { config } = createMockTaskConfig()
+		const trait = buildOrchestrationTrait(config)
+
+		const controller = new AbortController()
+		runStub.resolves({ status: SubagentExecutionStatus.COMPLETED, result: "done", stats: SUBAGENT_STATS } as never)
+
+		await trait.runSubagent("First run", { signal: controller.signal })
+		await trait.runSubagent("Second run", { signal: controller.signal })
+
+		// Abort after both runs finished — neither run's listener should fire
+		controller.abort(new Error("Late abort"))
+
+		sinon.assert.notCalled(abortStub)
+	})
+})

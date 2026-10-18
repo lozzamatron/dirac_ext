@@ -302,6 +302,19 @@ export async function formatResults(
 		output += filePathHeader
 		byteSize += Buffer.byteLength(filePathHeader, "utf8")
 
+		if (includeAnchors && matchCount <= 5) {
+			const matches = fileResult.lines.filter((line) => line.isMatch)
+			const matchLines = matches.map((line) => currentLines![line.lineNum - 1])
+			if (matches.length > 0 && matchLines.every((line) => line.length <= MAX_LINE_LENGTH)) {
+				const summary = `Matches: ${matches.map((line, index) => `${line.lineNum} ${JSON.stringify(matchLines[index])}`).join(", ")}\n`
+				if (byteSize + Buffer.byteLength(summary, "utf8") < MAX_BYTE_SIZE) {
+					output += summary
+					byteSize += Buffer.byteLength(summary, "utf8")
+				}
+			}
+		}
+
+
 		let fileSkippedResults = 0
 		let lastLineNum = -1
 		for (const line of fileResult.lines) {
@@ -312,7 +325,7 @@ export async function formatResults(
 			}
 
 			if (lastLineNum !== -1 && line.lineNum !== lastLineNum + 1) {
-				const separator = "│----\n"
+				const separator = `--- ${line.lineNum - lastLineNum - 1} lines skipped ---\n`
 				if (byteSize + Buffer.byteLength(separator, "utf8") >= MAX_BYTE_SIZE) {
 					wasLimitReached = true
 					break
@@ -324,7 +337,8 @@ export async function formatResults(
 			const displayLine = includeAnchors
 				? formatLineWithHash(sourceLine, anchors![line.lineNum - 1])
 				: sourceLine
-			const lineString = includeAnchors ? `${displayLine}\n` : `│${displayLine}\n`
+			const matchMarker = includeAnchors && line.isMatch ? `--- match at line ${line.lineNum} ---\n` : ""
+			const lineString = `${matchMarker}${includeAnchors ? displayLine : `│${displayLine}`}\n`
 			if (byteSize + Buffer.byteLength(lineString, "utf8") >= MAX_BYTE_SIZE) {
 				wasLimitReached = true
 				break

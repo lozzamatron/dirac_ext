@@ -42,10 +42,10 @@ function parseWorkspaceHint(cmd: string): WorkspaceHintMatch | null {
 }
 
 export const execute_command_spec: DiracToolSpec = {
-	id: DiracDefaultTool.BASH,
+	id: DiracDefaultTool.EXECUTE_COMMAND,
 	name: "execute_command",
 	description:
-		"Executes CLI commands or scripts. Provide exactly one of `commands` or `script`. Use `commands` for simple command sequences and `script` for complex multi-line logic or data processing. Scripts have full access to the filesystem and environment. In multi-root workspaces, prefix commands with `@workspace:`.",
+		"Executes CLI commands or scripts. Provide exactly one of `commands` or `script`. Use `commands` for simple command sequences and `script` for complex multi-line logic or data processing. Scripts have full access to the filesystem and environment. When scripting exact file edits, check boundary bytes and preserve surrounding whitespace: deleting a complete line includes its terminating newline, not only its visible characters. In multi-root workspaces, prefix commands with `@workspace:`.",
 	parameters: [
 		{
 			name: "commands",
@@ -146,17 +146,7 @@ export class ExecuteCommandTool implements IDiracTool {
 		commands: NormalizedCommand[],
 		utilityPermissionHandlingEnabled: boolean,
 	): CommandApprovalRequirement {
-		if (!utilityPermissionHandlingEnabled) {
-			if (this.autoApprover.isUnrestrictedAutoApprove()) {
-				return { required: false, utilityEligible: false }
-			}
-			for (const command of commands) {
-				const actualCommand = this.stripWorkspaceHint(command.command)
-				const permission = this.commandPermissionController.validateCommand(actualCommand)
-				if (!permission.allowed || !this.autoApprover.isCommandAutoApproved(actualCommand)) {
-					return { required: true, utilityEligible: false }
-				}
-			}
+		if (!utilityPermissionHandlingEnabled && this.autoApprover.isUnrestrictedAutoApprove()) {
 			return { required: false, utilityEligible: false }
 		}
 
@@ -188,34 +178,29 @@ export class ExecuteCommandTool implements IDiracTool {
 		utilityPermissionHandlingEnabled: boolean,
 	): Promise<{ approved: boolean; message?: string }> {
 		const label = this.permissionCardLabel(commands, env.config.cwd)
-		const card =
-			!env.config.isSubagentExecution || utilityPermissionHandlingEnabled
-				? await env.ui.createCard({
-					header: commands.length === 1 ? `Execute: ${label}` : `Execute ${label}?`,
-					status: CardStatus.WAITING_FOR_INPUT,
-					icon: DiracIcon.COMMAND,
-					requireApproval: true,
-					permissionRequestKind:
-						utilityPermissionHandlingEnabled
-							? (!utilityEligible ? "manual_tool" : "tool")
-							: undefined,
-					renderType: "markdown",
-					maxHeight: 10000,
-					rawInput: {
-						commands: commands.map(({ command, displayName, language }) => ({ command, displayName, language })),
-					},
-					body: commands
-						.map((command) => {
-							const language = command.language || "bash"
-							const header = command.displayName !== command.command ? `**${command.displayName}**\n` : ""
-							return `${header}\`\`\`${language}\n${shortenCommandForDisplay(command.command, env.config.cwd)}\n\`\`\``
-						})
-						.join("\n"),
-					collapsed: false,
+		const card = await env.ui.createCard({
+			header: commands.length === 1 ? `Execute: ${label}` : `Execute ${label}?`,
+			status: CardStatus.WAITING_FOR_INPUT,
+			icon: DiracIcon.COMMAND,
+			requireApproval: true,
+			permissionRequestKind:
+				utilityPermissionHandlingEnabled
+					? (!utilityEligible ? "manual_tool" : "tool")
+					: undefined,
+			renderType: "markdown",
+			maxHeight: 10000,
+			rawInput: {
+				commands: commands.map(({ command, displayName, language }) => ({ command, displayName, language })),
+			},
+			body: commands
+				.map((command) => {
+					const language = command.language || "bash"
+					const header = command.displayName !== command.command ? `**${command.displayName}**\n` : ""
+					return `${header}\`\`\`${language}\n${shortenCommandForDisplay(command.command, env.config.cwd)}\n\`\`\``
 				})
-				: undefined
-
-		if (!card) return { approved: false }
+				.join("\n"),
+			collapsed: false,
+		})
 
 		let interaction: Awaited<ReturnType<ICardHandle["waitForInteraction"]>>
 		try {

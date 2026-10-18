@@ -1,8 +1,8 @@
 import { strict as assert } from "node:assert"
 import * as fs from "fs/promises"
+import { afterEach, beforeEach, describe, it } from "mocha"
 import * as os from "os"
 import * as path from "path"
-import { afterEach, beforeEach, describe, it } from "mocha"
 import { ToolDiscoveryService } from "../ToolDiscoveryService"
 import { UserToolLoader } from "../UserToolLoader"
 
@@ -108,6 +108,36 @@ describe("UserToolLoader", () => {
 		assert.equal(tool, undefined)
 	})
 
+	it("rejects a manifest that is not valid JSON", async () => {
+		const root = await makeTempDir()
+		const toolDir = path.join(root, "bad_manifest")
+		await fs.mkdir(toolDir, { recursive: true })
+		await fs.writeFile(path.join(toolDir, "dirac-tool.json"), '{"schemaVersion": 1, "id": ', "utf8")
+		await fs.writeFile(path.join(toolDir, "tool.ts"), "export const spec = {}; export function create() {}", "utf8")
+
+		const result = await UserToolLoader.loadWithDiagnostics(toolDir, "workspace")
+
+		assert.equal(result.tool, undefined)
+		assert.ok(result.error?.includes("malformed JSON"), "error should identify malformed JSON")
+	})
+
+	it("rejects a manifest with the wrong shape (missing createdBy)", async () => {
+		const root = await makeTempDir()
+		const toolDir = path.join(root, "wrong_shape")
+		await fs.mkdir(toolDir, { recursive: true })
+		await fs.writeFile(
+			path.join(toolDir, "dirac-tool.json"),
+			JSON.stringify({ schemaVersion: 1, id: "ok_tool", name: "ok_tool", scope: "workspace", entry: "tool.ts" }),
+			"utf8",
+		)
+		await fs.writeFile(path.join(toolDir, "tool.ts"), "export const spec = {}; export function create() {}", "utf8")
+
+		const result = await UserToolLoader.loadWithDiagnostics(toolDir, "workspace")
+
+		assert.equal(result.tool, undefined)
+		assert.ok(result.error?.includes("schema mismatch") || result.error?.includes("createdBy"))
+	})
+
 	it("rejects manifest/spec id mismatch", async () => {
 		const root = await makeTempDir()
 		const toolDir = await writeUserTool(root, { id: "manifest_id" })
@@ -147,6 +177,23 @@ describe("ToolDiscoveryService user tools", () => {
 		const tools = await ToolDiscoveryService.scanUserToolDirectory(root, "workspace")
 
 		assert.equal(tools.length, 0)
+	})
+
+	it("discovers a disabled workspace tool without evaluating module top-level code", async () => {
+		const workspace = await makeTempDir()
+		const toolsDir = path.join(workspace, ".dirac", "tools")
+		const marker = path.join(workspace, "unexpected-marker")
+		await writeUserTool(toolsDir, {
+			id: "marker_tool",
+			extraSource: `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(marker)}, "ran");`,
+		})
+
+		const tools = await ToolDiscoveryService.scanWorkspaceTools(workspace)
+
+		assert.equal(tools.length, 1)
+		assert.equal(tools[0].id, "marker_tool")
+		assert.equal(tools[0].executable, false)
+		await assert.rejects(() => fs.access(marker), { code: "ENOENT" })
 	})
 
 	it("skips invalid tools without blocking valid tools", async () => {

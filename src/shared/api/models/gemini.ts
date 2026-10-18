@@ -3,7 +3,7 @@ import { MODEL_CAPABILITIES } from "./capabilities"
 
 export type GeminiModelId = keyof typeof geminiModels
 
-export const geminiDefaultModelId: GeminiModelId = "gemini-3.1-pro-preview"
+export const geminiDefaultModelId: GeminiModelId = "gemini-4-argon"
 
 export const geminiModels = {
 	"gemini-3.1-pro-preview": {
@@ -145,6 +145,16 @@ export const geminiModels = {
 			geminiThinkingLevel: "high" as const,
 			supportsThinkingLevel: true,
 		},
+	},
+	"gemini-4-argon": {
+		...MODEL_CAPABILITIES["gemini-4-argon"],
+		supportsPromptCache: true,
+		supportsGlobalEndpoint: true,
+		inputPrice: 2.0,
+		outputPrice: 10.0,
+		cacheReadsPrice: 0.1,
+		cacheWritesPrice: 0.0,
+		description: "Google's Gemini 4 Argon model for agentic workflows and multimodal reasoning.",
 	},
 	"gemini-2.5-pro": {
 		...MODEL_CAPABILITIES["gemini-2.5-pro"],

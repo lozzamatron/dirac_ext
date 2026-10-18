@@ -109,6 +109,12 @@ describe("parser", () => {
 			expect(result.prompt).toBe("just some text without images")
 		})
 
+		it("preserves exact whitespace in prompts without image references", () => {
+			const input = 'Insert exactly "  expect(value).toBe(true);\\n"\n    { nested: true }\n'
+			const result = parseImagesFromInput(input)
+			expect(result).toEqual({ prompt: input, imagePaths: [] })
+		})
+
 		it("should handle image at start of input", () => {
 			const input = "@/start.png is the image"
 			const result = parseImagesFromInput(input)
@@ -131,6 +137,12 @@ describe("parser", () => {
 			const input = "text   @/image.png   more text"
 			const result = parseImagesFromInput(input)
 			expect(result.prompt).toBe("text more text")
+		})
+
+		it("only cleans whitespace around removed image references", () => {
+			const input = 'Keep "  indent" and  two spaces\n    code();\ntext   @/image.png   more text'
+			const result = parseImagesFromInput(input)
+			expect(result.prompt).toBe('Keep "  indent" and  two spaces\n    code();\ntext more text')
 		})
 
 		it("should handle paths with narrow non-breaking spaces (macOS screenshots)", () => {
@@ -161,6 +173,12 @@ describe("parser", () => {
 			const result = parseImagesFromInput(input)
 			expect(result.imagePaths).toEqual([])
 			expect(result.prompt).toBe("analyze this image @/nonexistent/image.png")
+		})
+
+		it("preserves whitespace when an image reference does not resolve", () => {
+			vi.mocked(fs.existsSync).mockReturnValue(false)
+			const input = 'Insert "  two spaces" @/missing.png\n  code();'
+			expect(parseImagesFromInput(input)).toEqual({ prompt: input, imagePaths: [] })
 		})
 
 		it("should handle ~ in paths", () => {

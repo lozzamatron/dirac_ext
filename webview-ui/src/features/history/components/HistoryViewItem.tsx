@@ -73,7 +73,9 @@ const HistoryViewItem = ({
 		} catch (error) {
 			console.error("Error showing history run:", error)
 			setOpenError(
-				`This ${isGoal ? "Goal" : "task"} could not be opened. Its saved history may be unavailable or unreadable.`,
+				error instanceof Error
+					? error.message
+					: `This ${isGoal ? "Goal" : "task"} could not be opened. Its saved history may be unavailable or unreadable.`,
 			)
 		} finally {
 			setIsOpening(false)

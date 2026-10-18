@@ -1,6 +1,5 @@
 import { WorkspaceRootManager } from "@core/workspace/WorkspaceRootManager"
 import CheckpointTracker from "@integrations/checkpoints/CheckpointTracker"
-import pTimeout from "p-timeout"
 import { getErrorMessage } from "@/shared/errors"
 import { Logger } from "@/shared/services/Logger"
 import { MessageStateHandler } from "../../core/task/message-state"
@@ -105,14 +104,8 @@ export class CheckpointStorageManager {
 			}, 7_000)
 
 			const workspacePath = await this.getWorkspacePath()
-			const tracker = await pTimeout(
-				CheckpointTracker.create(this.config.taskId, this.config.enableCheckpoints, workspacePath),
-				{
-					milliseconds: 15_000,
-					message:
-						"Checkpoints taking too long to initialize. Consider re-opening Dirac in a project that uses git, or disabling checkpoints.",
-				},
-			)
+			// The operation owns its deadline and cleanup; never abandon a live initialization promise.
+			const tracker = await CheckpointTracker.create(this.config.taskId, this.config.enableCheckpoints, workspacePath)
 
 			this.checkpointTracker = tracker
 			return tracker

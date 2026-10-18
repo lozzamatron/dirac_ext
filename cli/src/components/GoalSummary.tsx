@@ -47,6 +47,9 @@ function accountingSummary(goal: GoalViewState): string {
 }
 
 function goalControls(goal: GoalViewState): string {
+	if (goal.hasLocalExecution === false && (goal.status === "working" || goal.status === "waiting")) {
+		return "Ctrl+R Resume here · Ctrl+X Stop (requires ownership)"
+	}
 	const turnControl = goal.followUpActive ? "Esc Cancel turn · " : ""
 	if (goal.status === "working" || goal.status === "waiting") {
 		return `${turnControl}Ctrl+P Pause · Ctrl+X Stop permanently`

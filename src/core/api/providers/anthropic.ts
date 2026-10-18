@@ -10,6 +10,7 @@ import {
 	AnthropicModelId,
 	anthropicDefaultModelId,
 	anthropicModels,
+	getAnthropicReasoningEffort,
 	isAnthropicAdaptiveThinkingSupported,
 	ModelInfo,
 } from "@shared/api"
@@ -25,6 +26,7 @@ import { ApiStream } from "../transform/stream"
 
 export const ANTHROPIC_FAST_MODE_BETA = "fast-mode-2026-02-01"
 
+// The installed SDK types do not yet include xhigh, which the API accepts for Opus 5.5.
 type AnthropicEffort = "low" | "medium" | "high" | "max"
 
 interface AnthropicHandlerOptions extends CommonApiHandlerOptions {
@@ -99,7 +101,7 @@ export class AnthropicHandler implements ApiHandler {
 
 		const budget_tokens = this.options.thinkingBudgetTokens || 0
 		const nativeToolsOn = (tools?.length ?? 0) > 0
-		const reasoningOn = (model.info.supportsReasoning ?? false) && budget_tokens !== 0
+		const reasoningOn = (model.info.supportsReasoning ?? false) && (model.info.thinkingAlwaysOn || budget_tokens !== 0)
 		const useAdaptive = isAnthropicAdaptiveThinkingSupported(model.id, model.info)
 
 		if (model.info.supportsPromptCache) {
@@ -112,7 +114,11 @@ export class AnthropicHandler implements ApiHandler {
 						: { type: "enabled", budget_tokens }
 					: undefined,
 				...(reasoningOn && useAdaptive
-					? { output_config: { effort: (this.options.reasoningEffort as AnthropicEffort) || "high" } }
+					? {
+							output_config: {
+								effort: getAnthropicReasoningEffort(model.info, this.options.reasoningEffort) as AnthropicEffort,
+							},
+						}
 					: {}),
 				max_tokens: model.info.maxTokens || 8192,
 				temperature: reasoningOn ? undefined : (model.info.temperature ?? undefined),
@@ -126,7 +132,8 @@ export class AnthropicHandler implements ApiHandler {
 				messages: anthropicMessages,
 				stream: true,
 				tools: nativeToolsOn ? tools : undefined,
-				tool_choice: nativeToolsOn && !reasoningOn ? { type: "any" } : undefined,
+				tool_choice:
+					nativeToolsOn && !reasoningOn && model.info.supportsForcedToolUse !== false ? { type: "any" } : undefined,
 			}
 
 			stream = useFastMode ? await createFastModeMessage(requestBody) : await client.messages.create(requestBody)
@@ -140,7 +147,11 @@ export class AnthropicHandler implements ApiHandler {
 						: { type: "enabled", budget_tokens }
 					: undefined,
 				...(reasoningOn && useAdaptive
-					? { output_config: { effort: (this.options.reasoningEffort as AnthropicEffort) || "high" } }
+					? {
+							output_config: {
+								effort: getAnthropicReasoningEffort(model.info, this.options.reasoningEffort) as AnthropicEffort,
+							},
+						}
 					: {}),
 				temperature: reasoningOn ? undefined : (model.info.temperature ?? undefined),
 				system: [{ text: systemPrompt, type: "text" }],

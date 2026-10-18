@@ -41,6 +41,8 @@ npm run lint
 
 CLI tests use Vitest. The suite includes interactive Ink rendering, standalone execution and stream contracts, parser behavior, task resumption, ACP conformance, and the public library surface. Some ACP tests create local Unix sockets, so the environment must allow temporary socket creation.
 
+For persistent terminal interaction and deterministic built-CLI regressions, use the [PTY harness](../tests/e2e/cli/README.md): `npm run cli:tui -- start` for interactive control, or `npm run test:e2e:cli:tui` after rebuilding. Its default local fixture does not use live model credentials.
+
 ## Runtime paths
 
 The CLI deliberately has two rendering paths:
@@ -120,6 +122,10 @@ Input handlers must ignore terminal control sequences they do not own. Layout co
 Use semantic tokens from `cli/src/constants/theme.ts`; do not place raw named colors in components. Dark mode is the fallback. Light mode is selected by `DIRAC_COLOR_MODE=light` or a light background reported through `COLORFGBG`.
 
 Transcript rendering uses a restrained hierarchy for long-running terminal sessions. Assistant prose, tool headers, tool bodies, metadata, and diff context each have semantic roles. Tool bodies must use an explicit foreground rather than inheriting the terminal default. Tool identity remains delightfully color coded through category-tinted icons, borders, and headers, while status colors stay localized to short markers and urgent states. Do not color entire output blocks. Prefer explicit palette colors over terminal `dim` styling, whose readability varies by emulator.
+
+Scrollable Markdown and live thinking tails must parse the complete document before clipping formatted terminal rows. Use `renderMarkdownLines` for both viewport rendering and Markdown scroll bounds; clipping source text before parsing loses off-screen fences, table headers, list numbering, and reference definitions. The interactive formatter is separate from standalone text output.
+
+File-edit permission diffs also parse the complete patch before clipping. Use `createDiffLayout` for both diff rendering and permission scroll bounds, accounting for collapsed context, split-row pairing, hunk separators and unified-line wrapping. Never clip raw patch source before parsing: losing a hunk header changes line numbers and can cut off rows without moving the viewport.
 
 ## Standalone output contract
 

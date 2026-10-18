@@ -141,12 +141,25 @@ export const VertexProvider = ({ showModelOptions, isPopup, currentMode }: Verte
 						zIndex={DROPDOWN_Z_INDEX - 2}
 					/>
 
-					{SUPPORTED_THINKING_MODELS.includes(selectedModelId) && (
-						<ThinkingBudgetSlider currentMode={currentMode} maxBudget={selectedModelInfo.thinkingConfig?.maxBudget} />
-					)}
-
-					{selectedModelInfo.thinkingConfig?.supportsThinkingLevel && (
-						<ReasoningEffortSelector currentMode={currentMode} />
+					{selectedModelInfo.thinkingAlwaysOn ? (
+						<ReasoningEffortSelector
+							allowedEfforts={selectedModelInfo.reasoningEffortOptions}
+							currentMode={currentMode}
+							defaultEffort={selectedModelInfo.defaultReasoningEffort}
+							description="Thinking is always on. Effort controls depth, latency, and cost."
+						/>
+					) : (
+						<>
+							{SUPPORTED_THINKING_MODELS.includes(selectedModelId) && (
+								<ThinkingBudgetSlider
+									currentMode={currentMode}
+									maxBudget={selectedModelInfo.thinkingConfig?.maxBudget}
+								/>
+							)}
+							{selectedModelInfo.thinkingConfig?.supportsThinkingLevel && (
+								<ReasoningEffortSelector currentMode={currentMode} />
+							)}
+						</>
 					)}
 
 					<ModelInfoView isPopup={isPopup} modelInfo={selectedModelInfo} selectedModelId={selectedModelId} />

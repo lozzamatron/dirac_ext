@@ -11,6 +11,12 @@
  * - Option+arrow sometimes comes as escape sequence, sometimes as key.meta + arrow
  */
 
+// Shift+Enter encodings passed through by Ink with the leading ESC stripped.
+export const SHIFT_ENTER_SEQUENCES = new Set([
+	"[13;2u", // CSI-u
+	"[27;2;13~", // xterm modifyOtherKeys
+])
+
 // Home key escape sequences from various terminals
 export const HOME_SEQUENCES = new Set([
 	"\x1b[H", // CSI H - most common (xterm, Terminal.app)

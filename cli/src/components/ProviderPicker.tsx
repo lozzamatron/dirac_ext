@@ -34,6 +34,8 @@ function isProviderConfigured(providerId: string, config: ApiConfiguration): boo
 			return !!(config as Record<string, unknown>)["openai-codex-oauth-credentials"]
 		case "deepseek":
 			return !!config.deepSeekApiKey
+		case "unbiased":
+			return !!config.unbiasedApiKey
 		case "xai":
 			return !!config.xaiApiKey
 		case "qwen":

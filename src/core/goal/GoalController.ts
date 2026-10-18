@@ -5,18 +5,14 @@ import type { Task } from "@core/task"
 import type { PresentationSnapshot } from "@core/task/message-state"
 import { TaskStatus } from "@shared/ExtensionMessage"
 import type { GoalViewState } from "@shared/goal"
-import { isActiveGoalStatus } from "@shared/goal"
 import { type GoalHistoryItem, type HistoryItem, isGoalHistoryItem } from "@shared/HistoryItem"
 import { getCwd, getDesktopDir } from "@utils/path"
 import Mutex from "p-mutex"
 import { ulid } from "ulid"
 import { Logger } from "@/shared/services/Logger"
-import { createGoalHistoryItem } from "./GoalHistory"
 import { GoalLoop } from "./GoalLoop"
 import { GoalStore } from "./GoalStore"
 import { GoalTaskFactory } from "./GoalTaskFactory"
-
-const goalActivationMutex = new Mutex()
 
 export interface GoalControllerDependencies {
 	controller: Controller
@@ -27,14 +23,15 @@ export interface GoalControllerDependencies {
 	postState: () => Promise<void>
 }
 
-/** Owns selected-Goal presentation and enforces the single active Goal invariant. */
+/** Owns selected-Goal presentation and one foreground conversation per surface. */
 export class GoalController {
+	private readonly goalActivationMutex = new Mutex()
 	private readonly store = new GoalStore()
 	private readonly ready: Promise<void>
 	private selectedLoop?: GoalLoop
 
 	constructor(private readonly dependencies: GoalControllerDependencies) {
-		this.ready = this.reconcilePersistedGoals()
+		this.ready = this.scanPersistedGoals()
 	}
 
 	get selectedGoalId(): string | undefined {
@@ -58,7 +55,7 @@ export class GoalController {
 	}
 
 	async start(objectiveMarkdown: string): Promise<string> {
-		return goalActivationMutex.withLock(() => this.startSerial(objectiveMarkdown))
+		return this.goalActivationMutex.withLock(() => this.startSerial(objectiveMarkdown))
 	}
 
 	private async startSerial(objectiveMarkdown: string): Promise<string> {
@@ -86,7 +83,7 @@ export class GoalController {
 	}
 
 	async select(goalId: string): Promise<GoalViewState> {
-		return goalActivationMutex.withLock(() => this.selectSerial(goalId))
+		return this.goalActivationMutex.withLock(() => this.selectSerial(goalId))
 	}
 
 	private async selectSerial(goalId: string): Promise<GoalViewState> {
@@ -103,7 +100,7 @@ export class GoalController {
 	}
 
 	async resume(goalId: string): Promise<GoalViewState> {
-		return goalActivationMutex.withLock(() => this.resumeSerial(goalId))
+		return this.goalActivationMutex.withLock(() => this.resumeSerial(goalId))
 	}
 
 	private async resumeSerial(goalId: string): Promise<GoalViewState> {
@@ -114,13 +111,16 @@ export class GoalController {
 		}
 		await this.assertNoActiveGoal()
 		this.assertNoActiveStandaloneTask()
-		await this.dependencies.clearStandaloneTask()
 		const historyItem = this.goalHistoryItem(goalId)
 		const record = await this.store.read(goalId)
 		const loop = await this.createLoop(goalId, historyItem.initialDisplayText)
-		this.selectedLoop = loop
-		if (record.status === "paused" && record.statusReason === "Created") await loop.start()
-		else await loop.resume()
+		const beforeStart = async () => {
+			await this.dependencies.clearStandaloneTask()
+			this.selectedLoop = loop
+		}
+		if (record.status === "paused" && record.statusReason === "Created") await loop.start(beforeStart)
+		else await loop.resume(beforeStart)
+		await this.dependencies.postState()
 		return loop.inspect()
 	}
 
@@ -143,7 +143,7 @@ export class GoalController {
 	}
 
 	async pause(goalId: string, reason?: string): Promise<GoalViewState> {
-		return goalActivationMutex.withLock(() => this.pauseSerial(goalId, reason))
+		return this.goalActivationMutex.withLock(() => this.pauseSerial(goalId, reason))
 	}
 
 	private async pauseSerial(goalId: string, reason?: string): Promise<GoalViewState> {
@@ -154,7 +154,7 @@ export class GoalController {
 	}
 
 	async stop(goalId: string, reason?: string): Promise<GoalViewState> {
-		return goalActivationMutex.withLock(() => this.stopSerial(goalId, reason))
+		return this.goalActivationMutex.withLock(() => this.stopSerial(goalId, reason))
 	}
 
 	private async stopSerial(goalId: string, reason?: string): Promise<GoalViewState> {
@@ -192,7 +192,7 @@ export class GoalController {
 	}
 
 	async pauseAndDeselect(reason: string): Promise<void> {
-		return goalActivationMutex.withLock(() => this.pauseAndDeselectSerial(reason))
+		return this.goalActivationMutex.withLock(() => this.pauseAndDeselectSerial(reason))
 	}
 
 	private async pauseAndDeselectSerial(reason: string): Promise<void> {
@@ -206,42 +206,14 @@ export class GoalController {
 		await this.pauseAndDeselect("Paused because the owning surface closed")
 	}
 
-	private async reconcilePersistedGoals(): Promise<void> {
+	private async scanPersistedGoals(): Promise<void> {
 		try {
-			const report = await this.store.reconcileOnStartup()
+			const report = await this.store.scanRecords()
 			for (const failure of report.failures) {
-				Logger.error(`[GoalController] Failed to reconcile persisted Goal ${failure.goalId}:`, failure.error)
-			}
-			for (const record of report.records) {
-				await this.reconcilePersistedGoalHistory(record)
+				Logger.error(`[GoalController] Failed to read persisted Goal ${failure.goalId}:`, failure.error)
 			}
 		} catch (error) {
 			Logger.error("[GoalController] Failed to scan persisted Goals during startup:", error)
-		}
-	}
-
-	private async reconcilePersistedGoalHistory(record: import("@shared/goal").GoalRecord): Promise<void> {
-		try {
-			const historyItem = this.dependencies.stateManager
-				.getGlobalStateKey("taskHistory")
-				.find((item) => item.id === record.id)
-			if (!historyItem) {
-				Logger.warn(
-					`[GoalController] Goal ${record.id} is missing its top-level history entry; preserving loaded history`,
-				)
-				return
-			}
-			if (!isGoalHistoryItem(historyItem)) {
-				Logger.warn(
-					`[GoalController] Run ${record.id} is a Task in history but a Goal on disk; preserving loaded history`,
-				)
-				return
-			}
-			await this.dependencies.updateGoalHistory(
-				createGoalHistoryItem(record, historyItem.initialDisplayText, historyItem.workspaceRootPath),
-			)
-		} catch (error) {
-			Logger.error(`[GoalController] Failed to refresh Goal history ${record.id}:`, error)
 		}
 	}
 
@@ -250,22 +222,21 @@ export class GoalController {
 		const workspaceManager = await this.dependencies.controller.ensureWorkspaceManager()
 		if (!workspaceManager) throw new Error("A Goal requires an initialized workspace manager")
 		const cwd = workspaceManager.getPrimaryRoot()?.path ?? (await getCwd(getDesktopDir()))
-		const workingConfiguration = this.dependencies.stateManager.captureEffectiveTaskConfiguration({
-			mode: "act",
-		})
-		const taskFactory = new GoalTaskFactory({
-			controller: this.dependencies.controller,
-			stateManager: this.dependencies.stateManager,
-			workspaceManager,
-			cwd,
-			workingConfiguration,
-			postCoordinatorState: this.dependencies.postState,
-		})
 		return new GoalLoop({
 			goalId: record.id,
 			initialDisplayText,
 			store: this.store,
-			taskFactory,
+			// Capture settings when execution starts, not when an inactive Goal is selected.
+			// Children in this run share that snapshot; a later run captures a new one.
+			createTaskFactory: () =>
+				new GoalTaskFactory({
+					controller: this.dependencies.controller,
+					stateManager: this.dependencies.stateManager,
+					workspaceManager,
+					cwd,
+					workingConfiguration: this.dependencies.stateManager.captureEffectiveTaskConfiguration({ mode: "act" }),
+					postCoordinatorState: this.dependencies.postState,
+				}),
 			stateManager: this.dependencies.stateManager,
 			updateHistory: (item) => {
 				if (!isGoalHistoryItem(item)) throw new Error(`Goal ${goalId} produced a Task history item`)
@@ -280,8 +251,6 @@ export class GoalController {
 		if (this.selectedLoop?.hasRunningCoordinator) {
 			throw new Error(`Goal ${this.selectedLoop.goalId} already has a running coordinator`)
 		}
-		const active = (await this.store.list()).find((record) => isActiveGoalStatus(record.status))
-		if (active) throw new Error(`Goal ${active.id} is already active`)
 	}
 
 	private assertNoActiveStandaloneTask(): void {

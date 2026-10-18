@@ -93,6 +93,29 @@ describe("Ripgrep search result anchors", () => {
 		assert.equal(emittedAnchor, AnchorStateManager.getAnchors(filePath, taskId)?.[0])
 	})
 
+	it("summarizes a few anchored matches separately from context lines", async () => {
+		const filePath = path.join(tmpDir, "matches.txt")
+		await fs.writeFile(filePath, "first\ncontext\nthird\n")
+
+		const output = await formatResults(
+			[{
+				filePath, lines: [
+					{ lineNum: 1, content: "first\n", isMatch: true },
+					{ lineNum: 2, content: "context\n", isMatch: false },
+					{ lineNum: 3, content: "third\n", isMatch: true },
+				]
+			}],
+			2, tmpDir, taskId, true,
+		)
+
+		assert.ok(output.includes('Matches: 1 "first", 3 "third"'))
+		assert.ok(output.includes('§context'))
+		assert.ok(output.includes('§first'))
+		assert.match(output, /--- match at line 1 ---\n[A-Za-z]+§first/)
+		assert.match(output, /--- match at line 3 ---\n[A-Za-z]+§third/)
+	})
+
+
 	it("does not initialize anchor state for plain search output", async () => {
 		const filePath = path.join(tmpDir, "plain.txt")
 		await fs.writeFile(filePath, "plain line")
@@ -143,5 +166,44 @@ describe("Ripgrep search result anchors", () => {
 		assert.ok(output.includes(`${anchor}${getDelimiter()}${sourceLine}`))
 		assert.ok(!output.includes(`│${anchor}${getDelimiter()}`))
 	})
+	it("reports the exact number of source lines skipped between search blocks", async () => {
+		const filePath = path.join(tmpDir, "gaps.txt")
+		const sourceLines = ["first match", "one", "two", "second match", "next match", "three", "four", "five", "last match"]
+		await fs.writeFile(filePath, sourceLines.join("\n"))
+		const resultLines = [1, 4, 5, 9].map((lineNum) => ({
+			lineNum,
+			content: `${sourceLines[lineNum - 1]}\n`,
+			isMatch: true,
+		}))
+
+		for (const includeAnchors of [false, true]) {
+			const output = await formatResults([{ filePath, lines: resultLines }], 4, tmpDir, taskId, includeAnchors)
+			assert.equal(output.match(/--- \d+ lines skipped ---/g)?.join("; "), "--- 2 lines skipped ---; --- 3 lines skipped ---")
+			assert.ok(!output.includes("--- 0 lines skipped ---"))
+			if (includeAnchors) {
+				const anchors = AnchorStateManager.getAnchors(filePath, taskId)!
+				assert.ok(output.includes(`${anchors[3]}${getDelimiter()}second match`))
+			} else {
+				assert.ok(output.includes("│second match\n│next match"))
+			}
+		}
+	})
+
+	it("counts plain-search lines omitted for exceeding the display length", async () => {
+		const filePath = path.join(tmpDir, "long-context.txt")
+		const output = await formatResults(
+			[{
+				filePath, lines: [
+					{ lineNum: 1, content: "first\n", isMatch: true },
+					{ lineNum: 2, content: `${"x".repeat(301)}\n`, isMatch: false },
+					{ lineNum: 3, content: "last\n", isMatch: true },
+				]
+			}],
+			2,
+			tmpDir,
+		)
+		assert.ok(output.includes("│first\n--- 1 lines skipped ---\n│last"))
+	})
+
 
 })

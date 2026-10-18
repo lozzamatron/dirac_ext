@@ -1,7 +1,14 @@
 import type { OpenAiCompatibleModelInfo } from "./types"
 import { ApiFormat } from "../../proto/dirac/models"
 import { MODEL_CAPABILITIES } from "./capabilities"
-import { GPT_5_5_TIERS, GPT_5_4_TIERS, GPT_5_4_PRO_TIERS } from "./shared-tiers"
+import {
+	GPT_5_5_TIERS,
+	GPT_5_4_TIERS,
+	GPT_5_4_PRO_TIERS,
+	GPT_6_1_SOL_TIERS,
+	GPT_6_LUNA_TIERS,
+	GPT_6_SOL_TIERS,
+} from "./shared-tiers"
 
 /**
  * OpenAI-native-only Responses API capabilities.
@@ -93,6 +100,45 @@ export const openAiNativeModels = {
 		cacheReadsPrice: 1.0,
 		cacheWritesPrice: 12.50,
 		apiFormat: ApiFormat.OPENAI_RESPONSES,
+		supportsPersistedReasoning: true,
+	},
+	"gpt-6-sol": {
+		...MODEL_CAPABILITIES["gpt-6-sol"],
+		supportsPromptCache: true,
+		supportsFastMode: true,
+		fastModePriceMultiplier: 2,
+		inputPrice: 2.0,
+		outputPrice: 10.0,
+		cacheReadsPrice: 0.2,
+		cacheWritesPrice: 2.5,
+		apiFormat: ApiFormat.OPENAI_RESPONSES,
+		tiers: GPT_6_SOL_TIERS,
+		supportsPersistedReasoning: true,
+	},
+	"gpt-6.1-sol": {
+		...MODEL_CAPABILITIES["gpt-6.1-sol"],
+		supportsPromptCache: true,
+		supportsFastMode: true,
+		fastModePriceMultiplier: 2,
+		inputPrice: 2.0,
+		outputPrice: 10.0,
+		cacheReadsPrice: 0.1,
+		cacheWritesPrice: 2.5,
+		apiFormat: ApiFormat.OPENAI_RESPONSES,
+		tiers: GPT_6_1_SOL_TIERS,
+		supportsPersistedReasoning: true,
+	},
+	"gpt-6-luna": {
+		...MODEL_CAPABILITIES["gpt-6-luna"],
+		supportsPromptCache: true,
+		supportsFastMode: true,
+		fastModePriceMultiplier: 2,
+		inputPrice: 0.1,
+		outputPrice: 0.5,
+		cacheReadsPrice: 0.01,
+		cacheWritesPrice: 0.125,
+		apiFormat: ApiFormat.OPENAI_RESPONSES,
+		tiers: GPT_6_LUNA_TIERS,
 		supportsPersistedReasoning: true,
 	},
 	"gpt-5.6-terra": {

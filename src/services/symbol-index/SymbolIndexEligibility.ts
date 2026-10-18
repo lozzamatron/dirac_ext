@@ -1,8 +1,8 @@
-import { spawn } from "node:child_process"
 import * as fs from "node:fs/promises"
 import os from "node:os"
 import * as path from "node:path"
 import { DiracIgnorePolicy } from "@/shared/ignore/DiracIgnorePolicy"
+import { runWorkspaceGit, walkWorkspace, WorkspaceGitVisibility } from "@/utils/workspaceTraversal"
 
 const SUPPORTED_EXTENSIONS = new Set([
 	"js",
@@ -74,7 +74,6 @@ const EXCLUDED_FILE_NAMES = new Set([
 ])
 
 const GIT_TIMEOUT_MS = 120_000
-const GIT_MAX_OUTPUT_BYTES = 64 * 1024 * 1024
 
 interface GitResult {
 	code: number
@@ -90,6 +89,7 @@ export interface SymbolIndexControlPaths {
 
 export interface SymbolIndexEligibilityResult extends SymbolIndexControlPaths {
 	paths: Set<string>
+	directories: Set<string>
 }
 
 export class SymbolIndexEligibility {
@@ -98,7 +98,10 @@ export class SymbolIndexEligibility {
 	private gitDirectory: string | null = null
 	private controlPaths = new Set<string>()
 
-	public constructor(private readonly projectRoot: string) {
+	public constructor(
+		private readonly projectRoot: string,
+		private readonly cancellationSignal = new AbortController().signal,
+	) {
 		this.diracIgnorePolicy = new DiracIgnorePolicy(projectRoot)
 		this.controlPaths.add(path.join(projectRoot, ".diracignore"))
 	}
@@ -169,8 +172,17 @@ export class SymbolIndexEligibility {
 
 	public async enumerate(): Promise<SymbolIndexEligibilityResult> {
 		const controlPaths = await this.prepareControlPaths()
+		const directories = new Set([this.projectRoot])
+		for await (const entry of walkWorkspace(this.projectRoot, {
+			signal: AbortSignal.any([this.cancellationSignal, AbortSignal.timeout(30_000)]),
+			gitVisibility: controlPaths.isGitWorkspace,
+			excludes: (entry) => this.excludesAbsolutePath(entry.absolutePath),
+		})) {
+			if (entry.dirent.isDirectory()) directories.add(entry.absolutePath)
+		}
 		return {
 			...controlPaths,
+			directories,
 			paths: controlPaths.isGitWorkspace ? await this.enumerateGitPaths() : await this.enumerateNonGitPaths(),
 		}
 	}
@@ -180,6 +192,17 @@ export class SymbolIndexEligibility {
 		if (gitStatus.code === 0) return gitStatus.stdout.toString("utf8").trim() === "true"
 		if (gitStatus.stderr.includes("not a git repository")) return false
 		throw new Error(`Unable to determine Git workspace eligibility: ${gitStatus.stderr.trim()}`)
+	}
+
+	public async filterDirectoryPaths(absolutePaths: Iterable<string>): Promise<Set<string>> {
+		const paths = [...absolutePaths].filter((absolutePath) => !this.excludesAbsolutePath(absolutePath))
+		if (!paths.length) return new Set()
+		const visibility = await WorkspaceGitVisibility.create(
+			this.projectRoot,
+			AbortSignal.any([this.cancellationSignal, AbortSignal.timeout(10_000)]),
+		)
+		const ignored = await visibility.ignoredPaths(paths.map((absolutePath) => path.relative(this.projectRoot, absolutePath)))
+		return new Set(paths.filter((absolutePath) => !ignored.has(path.relative(this.projectRoot, absolutePath))))
 	}
 
 	public async filterAbsolutePaths(absolutePaths: Iterable<string>): Promise<Set<string>> {
@@ -294,6 +317,7 @@ export class SymbolIndexEligibility {
 		const directories = [this.projectRoot]
 
 		while (directories.length > 0) {
+			this.cancellationSignal.throwIfAborted()
 			const directory = directories.pop()!
 			const entries = await fs.readdir(directory, { withFileTypes: true })
 			for (const entry of entries) {
@@ -310,7 +334,8 @@ export class SymbolIndexEligibility {
 	}
 
 	private getExternalControlPaths(): Set<string> {
-		return new Set([...this.controlPaths].filter((controlPath) => !this.isInsideProjectRoot(controlPath)))
+		// Workspace watching is pruned; Git metadata must have explicit non-recursive control watches too.
+		return new Set(this.controlPaths)
 	}
 
 	private isInsideProjectRoot(absolutePath: string): boolean {
@@ -331,53 +356,13 @@ export class SymbolIndexEligibility {
 		return path.normalize(path.isAbsolute(controlPath) ? controlPath : path.resolve(this.projectRoot, controlPath))
 	}
 
-	private runGit(args: string[], input?: string): Promise<GitResult> {
-		return new Promise((resolve, reject) => {
-			const child = spawn("git", args, {
-				cwd: this.projectRoot,
-				env: { ...process.env, LC_ALL: "C" },
-				stdio: ["pipe", "pipe", "pipe"],
-			})
-			const stdoutChunks: Buffer[] = []
-			const stderrChunks: Buffer[] = []
-			let outputBytes = 0
-			let settled = false
-
-			const timer = setTimeout(() => {
-				child.kill()
-				finish(new Error(`Git command timed out after ${GIT_TIMEOUT_MS}ms`))
-			}, GIT_TIMEOUT_MS)
-
-			const finish = (error?: Error, result?: GitResult): void => {
-				if (settled) return
-				settled = true
-				clearTimeout(timer)
-				if (error) reject(error)
-				else resolve(result!)
-			}
-
-			const collect = (chunks: Buffer[], chunk: Buffer): void => {
-				outputBytes += chunk.length
-				if (outputBytes > GIT_MAX_OUTPUT_BYTES) {
-					child.kill()
-					finish(new Error(`Git command output exceeded ${GIT_MAX_OUTPUT_BYTES} bytes`))
-					return
-				}
-				chunks.push(chunk)
-			}
-
-			child.stdout.on("data", (chunk: Buffer) => collect(stdoutChunks, chunk))
-			child.stderr.on("data", (chunk: Buffer) => collect(stderrChunks, chunk))
-			child.on("error", (error) => finish(error))
-			child.on("close", (code) =>
-				finish(undefined, {
-					code: code ?? -1,
-					stdout: Buffer.concat(stdoutChunks),
-					stderr: Buffer.concat(stderrChunks).toString("utf8"),
-				}),
-			)
-			child.stdin.on("error", (error) => finish(error))
-			child.stdin.end(input)
-		})
+	private async runGit(args: string[], input?: string): Promise<GitResult> {
+		const result = await runWorkspaceGit(
+			this.projectRoot,
+			args,
+			AbortSignal.any([this.cancellationSignal, AbortSignal.timeout(GIT_TIMEOUT_MS)]),
+			input,
+		)
+		return { ...result, stdout: Buffer.from(result.stdout) }
 	}
 }

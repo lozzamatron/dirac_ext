@@ -1,5 +1,5 @@
 import "should"
-import { clampThinkingBudget, type ModelInfo } from "../api"
+import { clampThinkingBudget, openAiCodexModels, openAiNativeModels, type ModelInfo } from "../api"
 import {
     getReasoningEffortOptionsForModel,
     resolveReasoningEffortForModel,
@@ -25,6 +25,11 @@ describe("reasoning support", () => {
 
 	it("falls back to the model default for unsupported efforts", () => {
 		resolveReasoningEffortForModel("provider/model", constrainedModel, "medium")!.should.equal("max")
+	})
+
+	it("falls back to medium instead of sending unsupported none for GPT-6.1 Sol", () => {
+		resolveReasoningEffortForModel("gpt-6.1-sol", openAiNativeModels["gpt-6.1-sol"], "none")!.should.equal("medium")
+		resolveReasoningEffortForModel("gpt-6.1-sol", openAiCodexModels["gpt-6.1-sol"], "none")!.should.equal("medium")
 	})
 
 	describe("clampThinkingBudget", () => {

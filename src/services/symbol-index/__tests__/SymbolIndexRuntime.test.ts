@@ -28,12 +28,12 @@ describe("SymbolIndexRuntime", () => {
 		sinon.restore()
 	})
 
-	it("creates one recursive watcher for the workspace", () => {
+	it("starts with one non-recursive root watcher", () => {
 		runtime = createRuntime()
 
 		watchRecords.length.should.equal(1)
 		watchRecords[0].watchPath.should.equal("/workspace")
-		watchRecords[0].options.should.deepEqual({ persistent: true, recursive: true })
+		watchRecords[0].options.should.deepEqual({ persistent: true, recursive: false })
 	})
 
 	it("batches supported watcher mutations into one callback", async () => {

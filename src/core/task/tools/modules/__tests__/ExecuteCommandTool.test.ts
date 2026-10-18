@@ -104,8 +104,8 @@ describe("ExecuteCommandTool", () => {
 
 		assert.ok(mockCard.waitForInteraction.calledOnce)
 		assert.equal((env.ui.createCard as sinon.SinonStub).firstCall.args[0].permissionRequestKind, undefined)
-		sinon.assert.calledOnce(commandPermissionController.validateCommand)
-		sinon.assert.notCalled(commandPermissionController.validateTool)
+		sinon.assert.calledOnce(commandPermissionController.validateTool)
+		sinon.assert.notCalled(commandPermissionController.validateCommand)
 	})
 
 	it("preserves unrestricted command approval before legacy restrictions", async () => {
@@ -121,17 +121,73 @@ describe("ExecuteCommandTool", () => {
 		sinon.assert.calledOnce(env.system.executeCommand as sinon.SinonStub)
 	})
 
-	it("preserves non-interactive subagent denial when Utility handling is disabled", async () => {
+	it("waits for user approval before executing a subagent command without Utility", async () => {
 		const { tool, env, autoApprover, mockCard } = createMocks()
 		env.config.isSubagentExecution = true
 		autoApprover.isCommandAutoApproved.returns(false)
+		let approve!: (interaction: { action: DiracAskResponse }) => void
+		mockCard.waitForInteraction.returns(new Promise((resolve) => { approve = resolve }))
+
+		const pending = tool.processCall({ commands: ["curl https://example.com"] }, env as any)
+		await Promise.resolve()
+		sinon.assert.calledOnce(mockCard.waitForInteraction)
+
+		sinon.assert.calledWithMatch(env.ui.createCard as sinon.SinonStub, {
+			status: CardStatus.WAITING_FOR_INPUT,
+			requireApproval: true,
+			permissionRequestKind: undefined,
+		})
+		sinon.assert.notCalled(env.system.executeCommand as sinon.SinonStub)
+		approve({ action: DiracAskResponse.APPROVE })
+		const result = await pending
+
+		assert.match(result, /ok/)
+		sinon.assert.calledOnce(mockCard.waitForInteraction)
+		sinon.assert.calledOnce(env.system.executeCommand as sinon.SinonStub)
+		sinon.assert.calledWith(mockCard.finalize, CardStatus.SUCCESS)
+	})
+
+	it("only reports subagent denial after the user rejects the command", async () => {
+		const { tool, env, autoApprover, mockCard } = createMocks()
+		env.config.isSubagentExecution = true
+		autoApprover.isCommandAutoApproved.returns(false)
+		mockCard.waitForInteraction.resolves({ action: DiracAskResponse.REJECT })
 
 		const result = await tool.processCall({ commands: ["curl https://example.com"] }, env as any)
 
 		assert.equal(result, "The user denied this operation.")
-		sinon.assert.notCalled(mockCard.waitForInteraction)
+		sinon.assert.calledOnce(mockCard.waitForInteraction)
+		sinon.assert.calledWith(mockCard.finalize, CardStatus.CANCELLED)
 		sinon.assert.notCalled(env.system.executeCommand as sinon.SinonStub)
 	})
+
+	it("prompts for a subagent script without Utility", async () => {
+		const { tool, env, autoApprover, mockCard } = createMocks()
+		env.config.isSubagentExecution = true
+		autoApprover.isCommandAutoApproved.returns(false)
+
+		await tool.processCall({ script: "print('hello')", language: "python" }, env as any)
+
+		sinon.assert.calledWithMatch(env.ui.createCard as sinon.SinonStub, { requireApproval: true })
+		sinon.assert.calledOnce(mockCard.waitForInteraction)
+		sinon.assert.calledOnce(env.system.executeCommand as sinon.SinonStub)
+	})
+
+	for (const utilityEnabled of [false, true]) {
+		it(`auto-approves safe subagent commands without a prompt (Utility enabled: ${utilityEnabled})`, async () => {
+			const { tool, env, mockCard } = createMocks()
+			env.config.isSubagentExecution = true
+			if (utilityEnabled) {
+				;(env.config as any).permissionDecisionBinding = { service: { decide: sinon.stub() }, configurationRevision: 1 }
+			}
+
+			await tool.processCall({ commands: ["ls -la"] }, env as any)
+
+			sinon.assert.notCalled(env.ui.createCard as sinon.SinonStub)
+			sinon.assert.notCalled(mockCard.waitForInteraction)
+			sinon.assert.calledOnce(env.system.executeCommand as sinon.SinonStub)
+		})
+	}
 
 	it("does not let Utility bypass a deterministic command restriction", async () => {
 		const { tool, env, commandPermissionController, mockCard } = createMocks()
@@ -145,37 +201,47 @@ describe("ExecuteCommandTool", () => {
 		assert.equal(cardParams.permissionRequestKind, "manual_tool")
 	})
 
-	it("auto-approves commands matched by a static whitelist before Utility", async () => {
-		const { tool, env, commandPermissionController, autoApprover, mockCard } = createMocks()
-		;(env.config as any).permissionDecisionBinding = { service: { decide: sinon.stub() }, configurationRevision: 1 }
-		autoApprover.isCommandAutoApproved.returns(false)
-		commandPermissionController.validateTool.returns({
-			allowed: true,
-			reason: "allowed",
-			matchedPattern: "npm test*",
+	for (const utilityEnabled of [false, true]) {
+		it(`auto-approves static whitelist matches in subagents (Utility enabled: ${utilityEnabled})`, async () => {
+			const { tool, env, commandPermissionController, autoApprover, mockCard } = createMocks()
+			env.config.isSubagentExecution = true
+			if (utilityEnabled) {
+				;(env.config as any).permissionDecisionBinding = { service: { decide: sinon.stub() }, configurationRevision: 1 }
+			}
+			autoApprover.isCommandAutoApproved.returns(false)
+			commandPermissionController.validateTool.returns({
+				allowed: true,
+				reason: "allowed",
+				matchedPattern: "npm test*",
+			})
+
+			await tool.processCall({ commands: ["npm test -- --runInBand"] }, env as any)
+
+			sinon.assert.notCalled(env.ui.createCard as sinon.SinonStub)
+			sinon.assert.notCalled(mockCard.waitForInteraction)
+			sinon.assert.calledOnce(env.system.executeCommand as sinon.SinonStub)
 		})
+	}
 
-		await tool.processCall({ commands: ["npm test -- --runInBand"] }, env as any)
+	for (const utilityEnabled of [false, true]) {
+		it(`keeps deterministic subagent restrictions manual-only (Utility enabled: ${utilityEnabled})`, async () => {
+			const { tool, env, commandPermissionController, autoApprover, mockCard } = createMocks()
+			env.config.isSubagentExecution = true
+			if (utilityEnabled) {
+				;(env.config as any).permissionDecisionBinding = { service: { decide: sinon.stub() }, configurationRevision: 1 }
+			}
+			autoApprover.isCommandAutoApproved.returns(false)
+			commandPermissionController.validateTool.returns({ allowed: false, reason: "denied" })
 
-		sinon.assert.notCalled(mockCard.waitForInteraction)
-		sinon.assert.calledOnce(env.system.executeCommand as sinon.SinonStub)
-	})
+			await tool.processCall({ commands: ["curl https://example.com"] }, env as any)
 
-	it("keeps deterministic command restrictions manual-only in subagent execution", async () => {
-		const { tool, env, commandPermissionController, autoApprover, mockCard } = createMocks()
-		;(env.config as any).permissionDecisionBinding = { service: { decide: sinon.stub() }, configurationRevision: 1 }
-		env.config.isSubagentExecution = true
-		autoApprover.isCommandAutoApproved.returns(false)
-		commandPermissionController.validateTool.returns({ allowed: false, reason: "denied" })
-
-		await tool.processCall({ commands: ["curl https://example.com"] }, env as any)
-
-		sinon.assert.calledOnce(commandPermissionController.validateTool)
-		sinon.assert.calledOnce(mockCard.waitForInteraction)
-		const cardParams = (env.ui.createCard as sinon.SinonStub).firstCall.args[0]
-		assert.equal(cardParams.permissionRequestKind, "manual_tool")
-		sinon.assert.calledOnce(env.system.executeCommand as sinon.SinonStub)
-	})
+			sinon.assert.calledOnce(commandPermissionController.validateTool)
+			sinon.assert.calledOnce(mockCard.waitForInteraction)
+			const cardParams = (env.ui.createCard as sinon.SinonStub).firstCall.args[0]
+			assert.equal(cardParams.permissionRequestKind, utilityEnabled ? "manual_tool" : undefined)
+			sinon.assert.calledOnce(env.system.executeCommand as sinon.SinonStub)
+		})
+	}
 
 	it("routes residual subagent commands through Utility-eligible approval", async () => {
 		const { tool, env, commandPermissionController, autoApprover, mockCard } = createMocks()
@@ -377,7 +443,7 @@ describe("ExecuteCommandTool", () => {
 
 		await tool.processCall({ commands: ["@frontend:npm run build"] }, env as any)
 
-		sinon.assert.calledWith(commandPermissionController.validateCommand, "npm run build")
+		sinon.assert.calledWith(commandPermissionController.validateTool, "execute_command", "npm run build")
 	})
 
 	it("normalizes and executes a script with wrapped interpreter command", async () => {

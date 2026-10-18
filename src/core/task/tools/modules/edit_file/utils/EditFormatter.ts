@@ -144,7 +144,15 @@ export class EditFormatter {
 		const summary = failedEdits.length > 0
 			? `Partial success in files[${prepared.fileIndex}] (${prepared.displayPath}): ${resolvedEdits.length} edit(s) applied${lineChanges}; ${failedEdits.length} failed.`
 			: `Applied ${resolvedEdits.length} edit(s) successfully${lineChanges}.`
+		const addedBlankLineAtEof = resolvedEdits.some(({ edit, lineIdx }) =>
+			edit.edit_type === "insert_after" &&
+			lineIdx === lines.length - 1 &&
+			lines.length > 1 &&
+			lines[lineIdx] === "" &&
+			edit.text.startsWith("\n"),
+		)
+		const eofNote = addedBlankLineAtEof ? "\nNote: leading newline added a blank line at EOF." : ""
 
-		return formatResponse.toolResult(`${summary}\n\n${results.join("\n\n---\n\n")}`)
+		return formatResponse.toolResult(`${summary}${eofNote}\n\n${results.join("\n\n---\n\n")}`)
 	}
 }

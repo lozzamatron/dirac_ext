@@ -1,10 +1,13 @@
 import * as crypto from "crypto"
 import * as fs from "fs/promises"
-import * as os from "os"
 import * as path from "path"
 import * as ts from "typescript"
 import { pathToFileURL } from "url"
+import { z } from "zod"
+import { diracHomeDir } from "@/shared/config/environment"
 import { getErrorMessage } from "@/shared/errors"
+import type { WorkspaceCodeSnapshot } from "@/core/security/WorkspaceCodeApproval"
+import { safeParseJson } from "@/shared/safe-json-parse"
 import { Logger } from "@/shared/services/Logger"
 import type { DiracToolSpec } from "@/shared/tools"
 import type { IDiracTool } from "../interfaces/IDiracTool"
@@ -18,15 +21,21 @@ export interface UserToolLoadResult {
 const LOADER_VERSION = "user-tool-loader-v1"
 const TOOL_ID_PATTERN = /^[a-z][a-z0-9_]*$/
 
-interface UserToolManifest {
-	schemaVersion: number
-	id: string
-	name: string
-	scope: "global" | "workspace" | "task"
-	entry: "tool.ts"
-	createdBy: "dirac"
-	createdAt?: string
-}
+const userToolManifestSchema = z.object({
+	schemaVersion: z.number().int().min(1),
+	id: z.string().regex(TOOL_ID_PATTERN, "Manifest id must be a snake_case identifier."),
+	name: z.string().regex(TOOL_ID_PATTERN, "Manifest name must be a snake_case identifier."),
+	scope: z.enum(["global", "workspace", "task"]),
+	entry: z.literal("tool.ts"),
+	createdBy: z.literal("dirac"),
+	createdAt: z.string().optional(),
+	description: z.string().optional(),
+	// Passed through unvalidated: `instruction` may be a function, which no JSON manifest can carry,
+	// and these parameters are display-only until the tool module itself is loaded and validated.
+	parameters: z.custom<DiracToolSpec["parameters"]>().optional(),
+})
+
+type UserToolManifest = z.infer<typeof userToolManifestSchema>
 
 interface UserToolModule {
 	spec?: DiracToolSpec
@@ -39,12 +48,40 @@ export class UserToolLoader {
 		return result.tool
 	}
 
-	static async loadWithDiagnostics(toolDir: string, source: ToolSource): Promise<UserToolLoadResult> {
+	/** Manifest-only descriptor: never transpiles or imports workspace code. */
+	static async describe(toolDir: string, source: ToolSource): Promise<DiscoveredTool | undefined> {
 		try {
 			const manifest = await this.readManifest(toolDir, source)
+			const modulePath = path.join(toolDir, manifest.entry)
+			const sourceCode = await fs.readFile(modulePath, "utf8")
+			return {
+				id: manifest.id,
+				name: manifest.name,
+				source,
+				exposure: CONFIGURABLE_TOOL_EXPOSURE,
+				spec: {
+					id: manifest.id,
+					name: manifest.name,
+					description: manifest.description || "Review this tool's source before enabling it.",
+					parameters: manifest.parameters || [],
+				},
+				factory: () => { throw new Error(`Unapproved workspace tool '${manifest.id}' cannot run.`) },
+				modulePath,
+				sourceHash: this.hashToolSource(modulePath, `${JSON.stringify(manifest)}\0${sourceCode}`),
+				executable: false,
+			}
+		} catch (error) {
+			Logger.warn(`[UserToolLoader] Skipping invalid user tool at '${toolDir}'.`, error)
+			return undefined
+		}
+	}
+
+	static async loadWithDiagnostics(toolDir: string, source: ToolSource, approvedSource?: WorkspaceCodeSnapshot): Promise<UserToolLoadResult> {
+		try {
+			const manifest = await this.readManifest(toolDir, source, approvedSource?.manifestSource)
 
 			const sourcePath = path.join(toolDir, manifest.entry)
-			const sourceCode = await fs.readFile(sourcePath, "utf8")
+			const sourceCode = approvedSource ? approvedSource.source.toString("utf8") : await fs.readFile(sourcePath, "utf8")
 			const sourceHash = this.hashToolSource(sourcePath, sourceCode)
 			const compiledPath = await this.compileTool(manifest.id, sourceCode, sourceHash)
 
@@ -89,39 +126,25 @@ export class UserToolLoader {
 		}
 	}
 
-	private static async readManifest(toolDir: string, source: ToolSource): Promise<UserToolManifest> {
+	private static async readManifest(toolDir: string, source: ToolSource, approvedManifest?: Buffer): Promise<UserToolManifest> {
 		const manifestPath = path.join(toolDir, "dirac-tool.json")
-		const raw = await fs.readFile(manifestPath, "utf8")
-		const parsed = JSON.parse(raw) as Partial<UserToolManifest>
+		const raw = approvedManifest ? approvedManifest.toString("utf8") : await fs.readFile(manifestPath, "utf8")
+		const parsed = safeParseJson(userToolManifestSchema, raw, `user tool manifest '${manifestPath}'`)
 
-		if (!parsed.schemaVersion || typeof parsed.schemaVersion !== "number" || parsed.schemaVersion < 1) {
-			throw new Error("Unsupported or missing schemaVersion. Expected 1.")
-		}
 		if (parsed.schemaVersion > 1) {
 			Logger.warn(`[UserToolLoader] Tool at '${toolDir}' declares schemaVersion ${parsed.schemaVersion}. Expected 1. Proceeding with caution.`)
 		}
-		if (parsed.createdBy !== "dirac") {
-			throw new Error("User tool manifest must include createdBy: 'dirac'.")
-		}
-		if (parsed.entry !== "tool.ts") {
-			throw new Error("User tool manifest entry must be 'tool.ts'.")
-		}
+		// Scope must match where the tool was discovered — contextual, not schema-checkable.
 		const validScopes: Record<string, string[]> = {
 			global: ["global"],
 			workspace: ["workspace"],
 			task: ["task"]
 		}
-		if (!validScopes[parsed.scope!]?.includes(source)) {
+		if (!validScopes[parsed.scope]?.includes(source)) {
 			throw new Error(`Manifest scope '${parsed.scope}' does not match discovered source '${source}'.`)
 		}
-		if (!this.isValidToolName(parsed.id)) {
-			throw new Error("Manifest id must be a snake_case identifier.")
-		}
-		if (!this.isValidToolName(parsed.name)) {
-			throw new Error("Manifest name must be a snake_case identifier.")
-		}
 
-		return parsed as UserToolManifest
+		return parsed
 	}
 
 	private static async compileTool(toolId: string, sourceCode: string, sourceHash: string): Promise<string> {
@@ -204,9 +227,6 @@ export class UserToolLoader {
 			.slice(0, 16)
 	}
 
-	private static isValidToolName(value: unknown): value is string {
-		return typeof value === "string" && TOOL_ID_PATTERN.test(value)
-	}
 
 	/**
 	 * Remove compiled cache files whose toolId is not in the active set.
@@ -234,6 +254,6 @@ export class UserToolLoader {
 	}
 
 	private static getDiracHomePath(): string {
-		return process.env.DIRAC_DIR || path.join(os.homedir(), ".dirac")
+		return diracHomeDir()
 	}
 }

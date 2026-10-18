@@ -13,6 +13,7 @@ import {
 import { getProviderModelIdKey, getProviderModelInfoKey } from "@shared/storage/provider-keys"
 import type { Settings } from "@shared/storage/state-keys"
 import { refreshGithubCopilotModels } from "@/core/controller/models/refreshGithubCopilotModels"
+import { getHuggingFaceModels } from "@/core/controller/models/refreshHuggingFaceModels"
 import { StateManager } from "@/core/storage/StateManager"
 import { Logger } from "@/shared/services/Logger"
 import {
@@ -104,7 +105,7 @@ export class SessionConfigManager {
 			const modelId = catalog.modelIds.includes(currentModelId) ? currentModelId : catalog.defaultModelId
 			if (!modelId) continue
 			if (requestedProvider === provider && currentModelId === modelId) {
-				if (provider === "openrouter") {
+				if (provider === "openrouter" || provider === "huggingface") {
 					await this.applyProviderAndModel(session, provider, modelId, sessionOverrides)
 				}
 				return
@@ -367,7 +368,9 @@ export class SessionConfigManager {
 		modelId: string,
 		sessionOverrides: Partial<Settings>,
 	): Promise<void> {
-		const openRouterModelInfo = provider === "openrouter" ? (await fetchOpenRouterModels())[modelId] : undefined
+		const dynamicModelInfo = provider === "openrouter"
+			? (await fetchOpenRouterModels())[modelId]
+			: provider === "huggingface" ? (await getHuggingFaceModels())[modelId] : undefined
 
 		this.setModeScopedSessionState(this.getSessionMode(session, sessionOverrides), sessionOverrides, (mode) => {
 			const providerKey = mode === "act" ? "actModeApiProvider" : "planModeApiProvider"
@@ -393,8 +396,8 @@ export class SessionConfigManager {
 			}
 			if (modelInfoKey) {
 				overrides[modelInfoKey] =
-					provider === "openrouter"
-						? (openRouterModelInfo ?? (selectedModelIsUnchanged ? overrides[modelInfoKey] : undefined))
+					provider === "openrouter" || provider === "huggingface"
+						? (dynamicModelInfo ?? (selectedModelIsUnchanged ? overrides[modelInfoKey] : undefined))
 						: undefined
 			}
 			if (provider === "bedrock" && !preserveCustomBedrockModel) {
@@ -408,7 +411,7 @@ export class SessionConfigManager {
 			}
 			const currentBudget = overrides[thinkingKey] as number | undefined
 			if (currentBudget && currentBudget > 0) {
-				const info = openRouterModelInfo ?? getModelInfoForProvider(provider, modelId) ?? getModelInfo(modelId)
+				const info = dynamicModelInfo ?? getModelInfoForProvider(provider, modelId) ?? getModelInfo(modelId)
 				const isAnthropicFamily = provider === "anthropic" || provider === "vertex" || provider === "bedrock"
 				overrides[thinkingKey] = clampThinkingBudget(currentBudget, info, isAnthropicFamily)
 			}
@@ -530,6 +533,11 @@ export class SessionConfigManager {
 									provider,
 								)
 							: []
+					}
+					if (provider === "huggingface") {
+						return refreshDynamicCatalog
+							? Object.keys(await getHuggingFaceModels()).sort((a, b) => a.localeCompare(b))
+							: getModelList(provider)
 					}
 					if (provider === "github-copilot") {
 						return refreshDynamicCatalog

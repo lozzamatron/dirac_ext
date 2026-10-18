@@ -5,13 +5,17 @@ import { theme } from "../constants/theme"
  */
 
 import { mentionRegexGlobal } from "@shared/context-mentions"
-import { Text } from "ink"
+import { Box, Text } from "ink"
 import React from "react"
+import { getInputCursorRow, getInputVisualRows } from "../utils/input-layout"
+
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" })
 
 interface HighlightedInputProps {
 	text: string
 	cursorPos?: number
 	availableCommands?: string[]
+	columns?: number
 }
 
 // Regex for / commands (at start or after whitespace)
@@ -108,7 +112,7 @@ function parseInput(text: string, availableCommands?: string[]): Segment[] {
 	return segments
 }
 
-export const HighlightedInput: React.FC<HighlightedInputProps> = ({ text, cursorPos, availableCommands }) => {
+export const HighlightedInput: React.FC<HighlightedInputProps> = ({ text, cursorPos, availableCommands, columns }) => {
 	// If no cursor position provided, just render text with highlights (backward compatible)
 	if (cursorPos === undefined) {
 		if (!text) return null
@@ -147,8 +151,8 @@ export const HighlightedInput: React.FC<HighlightedInputProps> = ({ text, cursor
 			// Cursor is in this segment - split it
 			const localCursorPos = safeCursorPos - segmentStart
 			const beforeCursor = segment.text.slice(0, localCursorPos)
-			const cursorChar = segment.text[localCursorPos]
-			const afterCursor = segment.text.slice(localCursorPos + 1)
+			const cursorChar = [...graphemes.segment(segment.text.slice(localCursorPos))][0].segment
+			const afterCursor = segment.text.slice(localCursorPos + cursorChar.length)
 
 			if (isHighlighted) {
 				return (
@@ -162,11 +166,15 @@ export const HighlightedInput: React.FC<HighlightedInputProps> = ({ text, cursor
 						)}
 						{cursorChar === "\n" || cursorChar === "\r" ? (
 							<React.Fragment>
-								<Text backgroundColor={theme.cursorBg} color={theme.cursorText}>{" "}</Text>
+								<Text backgroundColor={theme.cursorBg} color={theme.cursorText}>
+									{" "}
+								</Text>
 								{"\n"}
 							</React.Fragment>
 						) : (
-							<Text backgroundColor={theme.cursorBg} color={theme.cursorText}>{cursorChar}</Text>
+							<Text backgroundColor={theme.cursorBg} color={theme.cursorText}>
+								{cursorChar}
+							</Text>
 						)}
 						{afterCursor && (
 							<Text
@@ -183,11 +191,15 @@ export const HighlightedInput: React.FC<HighlightedInputProps> = ({ text, cursor
 					{beforeCursor}
 					{cursorChar === "\n" || cursorChar === "\r" ? (
 						<React.Fragment>
-							<Text backgroundColor={theme.cursorBg} color={theme.cursorText}> </Text>
+							<Text backgroundColor={theme.cursorBg} color={theme.cursorText}>
+								{" "}
+							</Text>
 							{"\n"}
 						</React.Fragment>
 					) : (
-						<Text backgroundColor={theme.cursorBg} color={theme.cursorText}>{cursorChar}</Text>
+						<Text backgroundColor={theme.cursorBg} color={theme.cursorText}>
+							{cursorChar}
+						</Text>
 					)}
 					{afterCursor}
 				</Text>
@@ -208,13 +220,45 @@ export const HighlightedInput: React.FC<HighlightedInputProps> = ({ text, cursor
 		return <Text key={segmentIdx}>{segment.text}</Text>
 	}
 
+	if (columns !== undefined) {
+		const rows = getInputVisualRows(text, columns)
+		const cursorRow = getInputCursorRow(rows, safeCursorPos)
+		return (
+			<Box flexDirection="column" width={columns} flexShrink={0}>
+				{rows.map((row, rowIndex) => {
+					const rowSegments = segments.flatMap((segment) => {
+						const start = Math.max(row.start, segment.startIndex)
+						const end = Math.min(row.end, segment.startIndex + segment.text.length)
+						if (start >= end) return []
+						return [{ ...segment, text: text.slice(start, end), startIndex: start }]
+					})
+					return (
+						<Text key={row.start} wrap="truncate-end">
+							{rowSegments.map(renderSegmentWithCursor)}
+							{cursorRow === rowIndex && safeCursorPos === row.end && (
+								<Text backgroundColor={theme.cursorBg} color={theme.cursorText}>
+									{" "}
+								</Text>
+							)}
+							{rowSegments.length === 0 && cursorRow !== rowIndex && " "}
+						</Text>
+					)
+				})}
+			</Box>
+		)
+	}
+
 	// Check if cursor is at the end (past all text)
 	const cursorAtEnd = safeCursorPos >= text.length
 
 	return (
 		<Text>
 			{segments.map((segment, idx) => renderSegmentWithCursor(segment, idx))}
-			{cursorAtEnd && <Text backgroundColor={theme.cursorBg} color={theme.cursorText}> </Text>}
+			{cursorAtEnd && (
+				<Text backgroundColor={theme.cursorBg} color={theme.cursorText}>
+					{" "}
+				</Text>
+			)}
 		</Text>
 	)
 }

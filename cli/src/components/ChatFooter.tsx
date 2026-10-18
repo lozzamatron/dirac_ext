@@ -7,6 +7,7 @@ import type { TaskStatus } from "@shared/ExtensionMessage"
 import { TaskStatusIndicator } from "./modular-ui/TaskStatusIndicator"
 import path from "node:path"
 import { useTerminalSize } from "../hooks/useTerminalSize"
+import type { VimMode } from "../utils/vim-editor"
 
 interface ChatFooterProps {
 	mode: "act" | "plan"
@@ -26,6 +27,7 @@ interface ChatFooterProps {
 	taskStatus?: TaskStatus
 	show?: boolean
 	isGoalActive?: boolean
+	vimMode?: VimMode
 }
 
 export const ChatFooter: React.FC<ChatFooterProps> = ({
@@ -46,10 +48,12 @@ export const ChatFooter: React.FC<ChatFooterProps> = ({
 	taskStatus,
 	show = true,
 	isGoalActive = false,
+	vimMode,
 }) => {
 	const { columns } = useTerminalSize()
 	if (!show) return null
 	const compact = columns < 64
+	const historyHint = columns < 48 ? "Ctrl+↑↓ prompts" : compact ? "Ctrl+↑/↓ history" : "Ctrl+↑/↓ previous prompts"
 	const boundedCacheHitRate = Math.max(0, Math.min(1, cacheHitRate))
 	const workspaceName = workspacePath.includes("\\") ? path.win32.basename(workspacePath) : path.basename(workspacePath)
 
@@ -59,9 +63,12 @@ export const ChatFooter: React.FC<ChatFooterProps> = ({
 				<Box paddingLeft={1} paddingRight={1} width="100%">
 					<Text color={theme.muted} wrap="truncate-end">
 						<Text bold color={mode === "plan" ? theme.plan : theme.primary}>
-							{theme.symbols.active} {mode === "plan" ? "Plan" : "Act"} (Goal)
+							{theme.symbols.active} {mode === "plan" ? "Plan" : "Act"}{compact ? "" : " (Goal)"}
 						</Text>
-						{" · / commands · @ files · Ctrl+G details · Shift+↓ newline"}
+						{vimMode && ` · ${vimMode.toUpperCase()}`}
+						{compact
+							? ` · ${historyHint} · @ files · / commands · Ctrl+G details`
+							: ` · ${historyHint} · / commands · @ files · Ctrl+G details · Shift+Enter/↓ newline`}
 					</Text>
 				</Box>
 				<Box paddingLeft={1} paddingRight={1} width="100%">
@@ -95,11 +102,15 @@ export const ChatFooter: React.FC<ChatFooterProps> = ({
 						<Text bold color={mode === "plan" ? theme.plan : theme.primary}>
 							{mode === "plan" ? "Plan" : "Act"}
 						</Text>
-						{" · / commands · @ files · Tab mode"}
+						{vimMode && ` · ${vimMode.toUpperCase()}`}
+						{` · ${historyHint} · / commands · @ files · Tab mode`}
 					</Text>
 				) : (
-					<Box flexShrink={1} flexWrap="wrap">
-						<Text color={theme.muted}>/ commands · @ files · Shift+↓ newline · Tab mode</Text>
+					<Box flexShrink={1}>
+						<Text color={theme.muted} wrap="truncate-end">
+							{vimMode && `${vimMode.toUpperCase()} · `}
+							{historyHint} · / commands · @ files · Shift+Enter/↓ newline · Tab mode
+						</Text>
 					</Box>
 				)}
 				{!compact && (

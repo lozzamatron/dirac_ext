@@ -372,13 +372,16 @@ describe("ReadFileToolHandler.execute – include_anchors visibility and cache",
 		const startOnly = (await handler.execute(config, makeBlock(realFile, { start_line: 3 }))) as string
 		assert.ok(startOnly.includes("three\nfour"))
 		assert.ok(!startOnly.includes("one\ntwo"))
+		assert.ok(startOnly.includes("[Lines: 3-4 of 4]\nthree\nfour"))
 
 		const endOnly = (await handler.execute(config, makeBlock(realFile, { end_line: 2 }))) as string
 		assert.ok(endOnly.includes("one\ntwo"))
 		assert.ok(!endOnly.includes("three"))
+		assert.ok(endOnly.includes("[Lines: 1-2 of 4]\none\ntwo"))
 
 		const pastEof = (await handler.execute(config, makeBlock(realFile, { start_line: 3, end_line: 99 }))) as string
 		assert.ok(pastEof.includes("three\nfour"))
+		assert.ok(pastEof.includes("[Lines: 3-4 of 4]\nthree\nfour"))
 	})
 
 	it("rejects negative, nonnumeric, reversed, and past-EOF ranges", async () => {
@@ -519,6 +522,7 @@ describe("ReadFileToolHandler.execute – include_anchors visibility and cache",
 			config,
 			makeBlock(realFile, { start_line: 2, end_line: 2, include_anchors: true }),
 		)) as string
+		assert.ok(result.includes("[Lines: 2-2 of 3]\n"))
 		assert.ok(/^[A-Z][a-zA-Z]*§second$/m.test(result))
 		assert.ok(!/§first$/m.test(result))
 		assert.ok(!/§third$/m.test(result))
@@ -653,7 +657,7 @@ describe("ReadFileToolHandler.execute – include_anchors visibility and cache",
 
 		assert.ok(first.includes(`record ${MAX_ANCHORED_FILE_LINES}:`))
 		assert.ok(first.includes(`record ${MAX_ANCHORED_FILE_LINES + 1}:`))
-		assert.ok(first.includes(`[Total lines: ${MAX_ANCHORED_FILE_LINES + 1}]`))
+		assert.ok(first.includes(`[Lines: ${MAX_ANCHORED_FILE_LINES}-${MAX_ANCHORED_FILE_LINES + 1} of ${MAX_ANCHORED_FILE_LINES + 1}]`))
 		assert.ok(first.includes("Hash anchoring unavailable"))
 		assert.ok(first.includes("use execute_command"))
 		assert.ok(!/^[A-Z][a-zA-Z]*§record/m.test(first))
@@ -704,5 +708,51 @@ describe("ReadFileToolHandler.execute – include_anchors visibility and cache",
 		assert.ok(result.includes("exceeds the 51200-byte read limit"))
 		assert.ok(result.includes(`--- ${smallFile} ---`))
 		assert.ok(result.includes("small succeeds"))
+	})
+
+	it("gives each card its own location when reading several files", async () => {
+		const { config, validator } = createConfig()
+		const uiConfig = { ...config, isSubagentExecution: false } as TaskConfig
+		const handler = new ReadFileToolHandler(validator)
+		const a = "multi-loc-a.md"
+		const b = "multi-loc-b.md"
+		await fs.writeFile(path.join(tmpDir, a), "alpha\n")
+		await fs.writeFile(path.join(tmpDir, b), "beta\n")
+
+		const created: Array<{ header: string; locations?: Array<{ path: string; line?: number }> }> = []
+		sandbox.stub(SurfaceAdapter.prototype, "createCard").callsFake(async (params: any) => {
+			created.push(params)
+			return { finalize: async () => { }, setBody: async () => { }, update: async () => { } } as any
+		})
+
+		await handler.execute(uiConfig, {
+			type: "tool_use",
+			name: DiracDefaultTool.FILE_READ,
+			params: { paths: [a, b] },
+		})
+
+		assert.equal(created.length, 2)
+		assert.equal(created[0].locations?.[0]?.path, a)
+		assert.equal(created[1].locations?.[0]?.path, b)
+	})
+
+	it("includes the requested start line in the card location", async () => {
+		const { config, validator } = createConfig()
+		const uiConfig = { ...config, isSubagentExecution: false } as TaskConfig
+		const handler = new ReadFileToolHandler(validator)
+		const realFile = "multi-loc-range.md"
+		await fs.writeFile(path.join(tmpDir, realFile), "one\ntwo\nthree\n")
+
+		const created: Array<{ locations?: Array<{ path: string; line?: number }> }> = []
+		sandbox.stub(SurfaceAdapter.prototype, "createCard").callsFake(async (params: any) => {
+			created.push(params)
+			return { finalize: async () => { }, setBody: async () => { }, update: async () => { } } as any
+		})
+
+		await handler.execute(uiConfig, makeBlock(realFile, { start_line: 2, end_line: 3 }))
+
+		assert.equal(created.length, 1)
+		assert.equal(created[0].locations?.[0]?.path, realFile)
+		assert.equal(created[0].locations?.[0]?.line, 2)
 	})
 })

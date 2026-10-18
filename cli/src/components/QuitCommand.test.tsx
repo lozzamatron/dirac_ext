@@ -18,7 +18,8 @@ vi.mock("ink", async (importOriginal) => {
 })
 
 // Mock child_process
-vi.mock("child_process", () => ({
+vi.mock("child_process", async (importOriginal) => ({
+	...await importOriginal<typeof import("child_process")>(),
 	execSync: vi.fn().mockReturnValue(""),
 	exec: vi.fn(),
 }))
@@ -31,7 +32,8 @@ vi.mock("@/core/controller/slash/getAvailableSlashCommands", () => ({
 vi.mock("@/core/storage/StateManager", () => ({
 	StateManager: {
 		get: () => ({
-			getGlobalSettingsKey: vi.fn().mockReturnValue("act"),
+			subscribe: vi.fn(() => () => { }),
+			getGlobalSettingsKey: vi.fn((key: string) => key === "cliVimMode" ? false : "act"),
 			getGlobalStateKey: vi.fn().mockReturnValue([]),
 			getApiConfiguration: vi.fn().mockReturnValue({}),
 		}),

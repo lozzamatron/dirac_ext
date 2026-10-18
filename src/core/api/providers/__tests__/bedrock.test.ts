@@ -6,7 +6,7 @@
  * deltas, error chunks, and cleanup behavior.
  */
 import "should"
-import type { ModelInfo } from "@shared/api"
+import { bedrockModels, type ModelInfo } from "@shared/api"
 import sinon from "sinon"
 import type { DiracStorageMessage } from "@/shared/messages/content"
 import { AwsBedrockHandler } from "../bedrock"
@@ -46,6 +46,37 @@ function makeHandler(chunks: any[]): AwsBedrockHandler {
 function runStream(handler: AwsBedrockHandler): Promise<any[]> {
 	return collect((handler as any).executeConverseStream({}, ZERO_PRICE_MODEL))
 }
+
+describe("AwsBedrockHandler Opus 5.5", () => {
+	afterEach(() => sinon.restore())
+
+	it("keeps thinking on and replaces an unsupported saved effort with medium", async () => {
+		const modelId = "anthropic.claude-opus-5-5"
+		const handler = new AwsBedrockHandler({ apiModelId: modelId, reasoningEffort: "none", thinkingBudgetTokens: 0 })
+		sinon.stub(handler as any, "prepareConverseInputs").returns({
+			messagesWithCache: [{ role: "user", content: [{ text: "hello" }] }],
+			systemMessages: [{ text: "system" }],
+			toolConfig: undefined,
+		})
+		let request: any
+		sinon.stub(handler as any, "executeConverseStream").callsFake(async function* (command: any) {
+			request = command.input
+		})
+
+		await collect(
+			(handler as any).createAnthropicMessage({
+				modelId,
+				model: { id: modelId, info: bedrockModels[modelId] },
+				systemPrompt: "system",
+				messages: [{ role: "user", content: "hello" }],
+			}),
+		)
+
+		request.modelId.should.equal(modelId)
+		request.additionalModelRequestFields.thinking.should.deepEqual({ type: "adaptive", display: "summarized" })
+		request.additionalModelRequestFields.output_config.should.deepEqual({ effort: "medium" })
+	})
+})
 
 describe("AwsBedrockHandler credentials", () => {
 	it("resolves explicit task credentials without mutating process.env", async () => {

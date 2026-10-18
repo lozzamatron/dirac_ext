@@ -181,6 +181,7 @@ export class ReadFileTool implements IDiracTool<ReadFileArgs> {
 					header: rangeLabel ? `Reading ${rangeLabel} from ${displayPath}` : `Reading from ${displayPath}`,
 					icon: DiracIcon.FILE_READ,
 					collapsed: true,
+					locations: [{ path: relPath, ...(lineRange ? { line: lineRange.start } : {}) }],
 				})
 				: undefined
 
@@ -297,7 +298,7 @@ export class ReadFileTool implements IDiracTool<ReadFileArgs> {
 				? anchorLimitMessage(window.totalLineCount)
 				: anchorByteLimitMessage()
 			const notice = includeAnchors ? `\n[Hash anchoring unavailable: ${limitMessage}]` : ""
-			return { result: `${header}[Total lines: ${window.totalLineCount}]${notice}\n${selection.text}` }
+			return { result: `${header}${this.selectionHeader(selection, lineRange)}${notice}\n${selection.text}` }
 		}
 
 		if (retainCompleteText && window.completeText === undefined) {
@@ -306,12 +307,12 @@ export class ReadFileTool implements IDiracTool<ReadFileArgs> {
 			const notice = includeAnchors
 				? `\n[Hash anchoring unavailable: ${anchorByteLimitMessage()}]`
 				: ""
-			return { result: `${header}[Total lines: ${window.totalLineCount}]${notice}\n${selection.text}` }
+			return { result: `${header}${this.selectionHeader(selection, lineRange)}${notice}\n${selection.text}` }
 		}
 
 		const selection = selectWindow()
 		if (!includeAnchors && lineRange !== undefined) {
-			return { result: `${header}[Total lines: ${window.totalLineCount}]\n${selection.text}` }
+			return { result: `${header}${this.selectionHeader(selection, lineRange)}\n${selection.text}` }
 		}
 
 		const completeText = window.completeText!
@@ -341,8 +342,8 @@ export class ReadFileTool implements IDiracTool<ReadFileArgs> {
 		const formattedContent = anchors
 			? formatLinesForModel(selection.lines, anchors.slice(selection.startIndex, selection.endIndex), true)
 			: selection.text
-		const lineCountSuffix = lineRange ? `\n[Total lines: ${selection.totalLineCount}]` : ""
-		return { result: `${header}[File Hash: ${currentHash}]${lineCountSuffix}\n${formattedContent}` }
+		const rangeHeader = lineRange ? `\n${this.selectionHeader(selection, lineRange)}` : ""
+		return { result: `${header}[File Hash: ${currentHash}]${rangeHeader}\n${formattedContent}` }
 	}
 
 	private async readExtractedContent(
@@ -366,8 +367,7 @@ export class ReadFileTool implements IDiracTool<ReadFileArgs> {
 		this.enforceSelectedByteCount(Buffer.byteLength(selection.text, "utf8"))
 		if (selection.totalLineCount > MAX_ANCHORED_FILE_LINES) {
 			cacheDeletions.add(`${absolutePath}#plain`)
-			const lineCount = `\n[Total lines: ${selection.totalLineCount}]`
-			return { result: `${header}${lineCount}\n${selection.text}` }
+			return { result: `${header}${this.selectionHeader(selection, lineRange)}\n${selection.text}` }
 		}
 
 		const currentHash = contentHash(fileContent.text)
@@ -382,8 +382,14 @@ export class ReadFileTool implements IDiracTool<ReadFileArgs> {
 			cacheUpdates[cacheKey] = { contentHash: currentHash }
 		}
 
-		const lineCountSuffix = lineRange ? `\n[Total lines: ${selection.totalLineCount}]` : ""
-		return { result: `${header}[File Hash: ${currentHash}]${lineCountSuffix}\n${selection.text}` }
+		const rangeHeader = lineRange ? `\n${this.selectionHeader(selection, lineRange)}` : ""
+		return { result: `${header}[File Hash: ${currentHash}]${rangeHeader}\n${selection.text}` }
+	}
+
+	private selectionHeader(selection: TextSelection, lineRange: LineRange | undefined): string {
+		return lineRange
+			? `[Lines: ${selection.startIndex + 1}-${selection.endIndex} of ${selection.totalLineCount}]`
+			: `[Total lines: ${selection.totalLineCount}]`
 	}
 
 	private parseLineRange(startLine: number | undefined, endLine: number | undefined): LineRange | undefined {

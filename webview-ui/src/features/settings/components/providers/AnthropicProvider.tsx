@@ -4,6 +4,7 @@ import { getModeSpecificFields, normalizeApiConfiguration } from "@/features/set
 import { useSettingsStore } from "@/features/settings/store/settingsStore"
 import { ApiKeyField } from "../common/ApiKeyField"
 import InferenceSpeedSelector from "../InferenceSpeedSelector"
+import ReasoningEffortSelector from "../ReasoningEffortSelector"
 import { BaseUrlField } from "../common/BaseUrlField"
 import { ModelInfoView } from "../common/ModelInfoView"
 import { ModelSelector } from "../common/ModelSelector"
@@ -79,9 +80,16 @@ export const AnthropicProvider = ({ showModelOptions, isPopup, currentMode }: An
 						selectedModelId={selectedModelId}
 					/>
 
-					{SUPPORTED_ANTHROPIC_THINKING_MODELS.includes(selectedModelId) && (
+					{selectedModelInfo.thinkingAlwaysOn ? (
+						<ReasoningEffortSelector
+							allowedEfforts={selectedModelInfo.reasoningEffortOptions}
+							currentMode={currentMode}
+							defaultEffort={selectedModelInfo.defaultReasoningEffort || "medium"}
+							description="Thinking is always on for this model. Effort controls depth, latency, and cost."
+						/>
+					) : SUPPORTED_ANTHROPIC_THINKING_MODELS.includes(selectedModelId) ? (
 						<ThinkingBudgetSlider currentMode={currentMode} maxBudget={selectedModelInfo.thinkingConfig?.maxBudget} />
-					)}
+					) : null}
 
 					<InferenceSpeedSelector
 						currentMode={currentMode}

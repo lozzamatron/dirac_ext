@@ -1,11 +1,10 @@
 import { formatResponse } from "@core/formatResponse"
 import { executeHook } from "@core/hooks/hook-executor"
-import { getTaskHookModelContext } from "./runtime/TaskRuntimeModelContext"
 import { getHooksEnabledSafe } from "@core/hooks/hooks-utils"
 import {
 	ensureTaskDirectoryExists,
-	getSavedApiConversationState,
 	getSavedApiConversationProviderState,
+	getSavedApiConversationState,
 	getSavedPresentationHistory,
 	getTaskMetadata,
 } from "@core/storage/disk"
@@ -28,10 +27,11 @@ import { AnchorStateManager } from "@utils/AnchorStateManager"
 import pWaitFor from "p-wait-for"
 import { CardStatus, DiracMessageType, TaskStatus } from "@/shared/ExtensionMessage"
 import { getErrorMessage } from "@/shared/errors"
-import { releaseTaskLock } from "./TaskLockUtils"
+import { getTaskHookModelContext } from "./runtime/TaskRuntimeModelContext"
+import type { TaskRunOutcome } from "./TaskRunOutcome"
+import { clearAskResponse } from "./TaskUserInput"
 import { LifecycleManagerDependencies } from "./types/lifecycle-manager"
 import { buildUserFeedbackContent } from "./utils/buildUserFeedbackContent"
-import type { TaskRunOutcome } from "./TaskRunOutcome"
 
 export interface ResumeTaskOptions {
 	/** Synthetic context for the first resumed model turn; never rendered or marked as user input. */
@@ -44,12 +44,11 @@ export interface ResumeTaskOptions {
 	}
 }
 
-
 export class LifecycleManager {
 	private abortPromise?: Promise<void>
 	private ownedResourceCleanupPromise?: Promise<void>
 
-	constructor(private dependencies: LifecycleManagerDependencies) { }
+	constructor(private dependencies: LifecycleManagerDependencies) {}
 
 	setApi(api: LifecycleManagerDependencies["api"]): void {
 		this.dependencies.api = api
@@ -278,15 +277,10 @@ export class LifecycleManager {
 		if (this.dependencies.taskState.abort) return
 		const persistedPresentation = await getSavedPresentationHistory(this.dependencies.taskId)
 		if (this.dependencies.taskState.abort) return
-		this.dependencies.messageStateHandler.setDiracMessages(
-			persistedPresentation.messages,
-			persistedPresentation.lastOffset,
-		)
+		this.dependencies.messageStateHandler.setDiracMessages(persistedPresentation.messages, persistedPresentation.lastOffset)
 
 		const savedApiConversation = await getSavedApiConversationState(this.dependencies.taskId)
-		const savedApiConversationHistory = savedApiConversation.messages.map(
-			removeUserInputMarkersFromMessage,
-		)
+		const savedApiConversationHistory = savedApiConversation.messages.map(removeUserInputMarkersFromMessage)
 		if (this.dependencies.taskState.abort) return
 		this.dependencies.messageStateHandler.setApiConversationHistory(
 			savedApiConversationHistory as any,
@@ -309,25 +303,27 @@ export class LifecycleManager {
 		if (this.dependencies.taskState.abort) return
 		this.dependencies.taskState.activeSkillIds = taskMetadata.active_skill_ids ?? []
 
+		// Trailing user-authored messages are follow-ups submitted after the run
+		// ended; they must not flip a completed restore to CANCELLED.
 		const lastDiracMessage = this.dependencies.messageStateHandler
 			.getDiracMessages()
 			.slice()
 			.reverse()
 			.find(
-				(m) => !(m.content.type === DiracMessageType.CARD && isResumePromptCard(m.content.card)),
+				(m) =>
+					!(m.content.type === DiracMessageType.CARD && isResumePromptCard(m.content.card)) &&
+					!(m.content.type === DiracMessageType.MARKDOWN && m.content.role === "user"),
 			)
 
 		this.dependencies.taskState.isInitialized = true
 		this.dependencies.taskState.abort = false
 
 		const completedTask =
-			lastDiracMessage?.content.type === DiracMessageType.CARD && isSuccessfulTaskCompletionCard(lastDiracMessage.content.card)
+			lastDiracMessage?.content.type === DiracMessageType.CARD &&
+			isSuccessfulTaskCompletionCard(lastDiracMessage.content.card)
 		// Reset askResponse state before waiting. Completed tasks remain available for
 		// follow-up messages just like cancelled tasks; only their displayed status differs.
-		this.dependencies.taskState.askResponse = undefined
-		this.dependencies.taskState.askResponseText = undefined
-		this.dependencies.taskState.askResponseImages = undefined
-		this.dependencies.taskState.askResponseFiles = undefined
+		clearAskResponse(this.dependencies.taskState)
 
 		this.dependencies.taskState.status = completedTask ? TaskStatus.COMPLETED : TaskStatus.CANCELLED
 		await this.dependencies.postStateToWebview()
@@ -516,7 +512,10 @@ export class LifecycleManager {
 
 		if (options.systemContext === undefined || options.initialUserInput !== undefined) {
 			const userFeedbackContent = await buildUserFeedbackContent(responseText, responseImages, responseFiles)
-			const userPromptHookResult = await this.dependencies.hookManager.runUserPromptSubmitHook(userFeedbackContent, "resume")
+			const userPromptHookResult = await this.dependencies.hookManager.runUserPromptSubmitHook(
+				userFeedbackContent,
+				"resume",
+			)
 
 			if (this.dependencies.taskState.abort) return
 			if (userPromptHookResult.cancel === true) {
@@ -609,7 +608,8 @@ export class LifecycleManager {
 						hooksEnabled,
 						model: getTaskHookModelContext(
 							this.getOperationalApi(),
-							this.dependencies.getRequestRuntime()?.workingConfiguration ?? this.dependencies.getWorkingConfiguration(),
+							this.dependencies.getRequestRuntime()?.workingConfiguration ??
+								this.dependencies.getWorkingConfiguration(),
 						),
 					})
 				} catch (error) {
@@ -641,8 +641,6 @@ export class LifecycleManager {
 			} catch (error) {
 				Logger.error("Failed to post state after setting abort flag", error)
 			}
-
-
 		} catch (error) {
 			abortFailures.push(error)
 		} finally {
@@ -652,10 +650,9 @@ export class LifecycleManager {
 				cleanupFailures.push(error)
 			}
 
-			this.dependencies.taskState.isApiRequestActive = false
-			this.dependencies.taskState.activeVoiceStreamId = undefined
-			this.dependencies.taskState.isWaitingForFirstChunk = false
-			this.dependencies.taskState.didFinishAbortingStream = true
+			this.dependencies.taskState.endApiRequest()
+			this.dependencies.taskState.endFirstChunkWait()
+			this.dependencies.taskState.markStreamAbortFinished()
 			this.dependencies.taskState.status = TaskStatus.CANCELLED
 
 			try {
@@ -693,15 +690,6 @@ export class LifecycleManager {
 
 		failures.push(...(await this.disposeTaskResources()))
 
-		if (this.dependencies.taskState.taskLockAcquired) {
-			try {
-				await releaseTaskLock(this.dependencies.taskId)
-				this.dependencies.taskState.taskLockAcquired = false
-				Logger.info(`[Task ${this.dependencies.taskId}] Task lock released`)
-			} catch (error) {
-				failures.push(error)
-			}
-		}
 
 		if (failures.length === 1) throw failures[0]
 		if (failures.length > 1) throw new AggregateError(failures, "Task resource cleanup failed")

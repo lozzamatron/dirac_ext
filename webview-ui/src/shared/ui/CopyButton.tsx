@@ -1,6 +1,8 @@
+import { StringRequest } from "@shared/proto/dirac/common"
 import { CheckCheckIcon, CopyIcon } from "lucide-react"
 import { forwardRef, useCallback, useState } from "react"
 import { cn } from "@/lib/utils"
+import { FileServiceClient } from "@/shared/api/grpc-client"
 import { Button } from "@/shared/ui/button"
 
 interface CopyButtonProps {
@@ -34,28 +36,31 @@ const POSITION_CLASSES = {
  */
 export const CopyButton: React.FC<CopyButtonProps> = ({ textToCopy, onCopy, className, ariaLabel }) => {
 	const [copied, setCopied] = useState(false)
+	const [copyFailed, setCopyFailed] = useState(false)
 
-	const handleCopy = useCallback(() => {
+	const handleCopy = useCallback(async () => {
 		const text = onCopy?.() || textToCopy
-		if (!text) {
-			return
-		}
+		if (!text) return
 
-		navigator.clipboard
-			.writeText(text)
-			.then(() => {
-				setCopied(true)
-				setTimeout(() => setCopied(false), COPIED_TIMEOUT)
-			})
-			.catch((err) => console.error("Copy failed", err))
+		try {
+			await FileServiceClient.copyToClipboard(StringRequest.create({ value: text }))
+			setCopyFailed(false)
+			setCopied(true)
+			setTimeout(() => setCopied(false), COPIED_TIMEOUT)
+		} catch (error) {
+			setCopied(false)
+			setCopyFailed(true)
+			console.error("Copy failed", error)
+		}
 	}, [textToCopy, onCopy])
 
 	return (
 		<Button
-			aria-label={copied ? "Copied" : ariaLabel || "Copy"}
+			aria-label={copied ? "Copied" : copyFailed ? "Copy failed" : ariaLabel || "Copy"}
 			className={cn("scale-90", className)}
 			onClick={handleCopy}
 			size="icon"
+			title={copyFailed ? "Copy failed" : undefined}
 			variant="icon">
 			{copied ? <CheckCheckIcon className="size-2" /> : <CopyIcon className="size-2" />}
 		</Button>
@@ -88,7 +93,7 @@ export const WithCopyButton = forwardRef<HTMLDivElement, WithCopyButtonProps>(
 				{hasCopyFunctionality && (
 					<div
 						className={cn(
-							"absolute opacity-0 group-hover:opacity-100 transition-opacity",
+							"absolute z-10 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity",
 							POSITION_CLASSES[position],
 							copyButtonClassname,
 						)}>

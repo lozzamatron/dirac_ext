@@ -129,10 +129,53 @@ describe("AnthropicHandler", () => {
 			expect(result.info.inputPrice).to.equal(10)
 			expect(result.info.outputPrice).to.equal(50)
 		})
-
 	})
 
 	describe("createMessage", () => {
+		it("sends Opus 5.5 with mandatory adaptive thinking, default medium effort, and no forced tool choice", async () => {
+			const handler = new AnthropicHandler({
+				apiKey: "test-api-key",
+				apiModelId: "claude-opus-5-5",
+				thinkingBudgetTokens: 0,
+			})
+			const create = sinon.stub().resolves(createAsyncIterable())
+			sinon.stub(handler as any, "ensureClient").returns({ messages: { create } })
+
+			await collect(
+				handler.createMessage(
+					"system",
+					[{ role: "user", content: "hello" }],
+					[
+						{
+							name: "lookup",
+							description: "Look up a value",
+							input_schema: { type: "object", properties: {} },
+						},
+					],
+				),
+			)
+
+			sinon.assert.calledOnce(create)
+			const request = create.firstCall.args[0]
+			request.model.should.equal("claude-opus-5-5")
+			request.thinking.should.deepEqual({ type: "adaptive", display: "summarized" })
+			request.output_config.should.deepEqual({ effort: "medium" })
+			expect(request.tool_choice).to.be.undefined
+		})
+
+		it("prices Opus 5.5 fast mode at twice its standard rates", () => {
+			const handler = new AnthropicHandler({
+				apiKey: "test-api-key",
+				apiModelId: "claude-opus-5-5",
+				inferenceSpeed: "fast",
+			})
+			const { info } = handler.getModel()
+			expect(info.inputPrice).to.equal(8)
+			expect(info.outputPrice).to.equal(40)
+			expect(info.cacheWritesPrice).to.equal(10)
+			expect(info.cacheReadsPrice).to.equal(0.4)
+		})
+
 		it("should route fast mode requests through the beta messages API", async () => {
 			const handler = new AnthropicHandler({
 				apiKey: "test-api-key",
@@ -183,7 +226,6 @@ describe("AnthropicHandler", () => {
 				"The selected Anthropic model does not support Fast mode",
 			)
 		})
-
 	})
 
 	describe("createMessage stream dispatch", () => {

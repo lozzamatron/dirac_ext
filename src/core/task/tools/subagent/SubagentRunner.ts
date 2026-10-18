@@ -12,6 +12,7 @@ import { ContextManager } from "@/core/context/context-management/ContextManager
 import { checkContextWindowExceededError } from "@/core/context/context-management/context-error-handling"
 import { DiracError, DiracErrorType } from "@/services/error"
 import { calculateApiCostAnthropic } from "@/utils/cost"
+import { sleep } from "@/utils/retry"
 import { TaskState } from "../../TaskState"
 import { excerpt } from "../../utils/excerpt"
 import { ToolExecutorCoordinator } from "../ToolExecutorCoordinator"
@@ -42,14 +43,13 @@ import type {
 } from "./SubagentRunTypes"
 import { SubagentToolExecutor } from "./SubagentToolExecutor"
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const MAX_EMPTY_ASSISTANT_RETRIES = 3
 const MAX_INITIAL_STREAM_ATTEMPTS = 3
 const INITIAL_STREAM_RETRY_BASE_DELAY_MS = 2_000
 const PARENT_ABORT_POLL_INTERVAL_MS = 50
 const WRAP_UP_TIMEOUT_SECONDS = 90
 const WRAP_UP_PROMPT =
-	'The research deadline has elapsed. Stop investigating and summarize the concrete findings you already established. Call respond with operation "complete" now. Do not perform further research.'
+	'The execution deadline has elapsed. Stop further task execution and summarize completed work, changes made, verification results, and any blockers or remaining work. Call respond with operation "complete" now.'
 
 interface SubagentContextState {
 	conversationHistoryDeletedRange?: [number, number]
@@ -188,12 +188,12 @@ export class SubagentRunner {
 		if (this.wrapUpRequested || this.isWrappingUp || this.shouldAbort()) return
 		this.wrapUpRequested = true
 		this.enterPhase("wrapping_up", "execution deadline reached")
-		this.recordTranscript("progress", { text: "Time limit reached. Wrapping up findings." })
+		this.recordTranscript("progress", { text: "Time limit reached. Wrapping up task results." })
 		this.recordDiagnostic("abort_requested", "wrapping_up", { reason: "execution deadline reached" })
 		this.runProgress.enqueueExecutionProgress({
 			...this.getRuntimeProgress(),
 			isWrappingUp: true,
-			trajectoryEvent: { type: SubagentTrajectoryEventType.MESSAGE, text: "Time limit reached. Wrapping up findings." },
+			trajectoryEvent: { type: SubagentTrajectoryEventType.MESSAGE, text: "Time limit reached. Wrapping up task results." },
 			stats: { ...this.activeStats },
 		})
 		await this.stopActiveWork()
@@ -270,6 +270,14 @@ export class SubagentRunner {
 		timeout?: number,
 		includeHistory?: boolean,
 	): Promise<SubagentRunResult> {
+		// A cancellation received before run() must never be cleared by startup.
+		if (this.abortRequested) {
+			const result = this.abortHandler.buildAbortResult(this.activeConversation, this.activeStats)
+			this.recordTerminal(result)
+			void this.runProgress.flush()
+			return result
+		}
+
 		const timeoutSeconds = resolveSubagentTimeoutSeconds(timeout)
 		const logPrefix = `[SubagentRunner:${this.subagentName || "unnamed"}]`
 		this.abortRequested = false
@@ -631,7 +639,7 @@ export class SubagentRunner {
 
 				if (finalizedToolCalls.length === 0) {
 					if (this.wrapUpRequested || this.isWrappingUp) {
-						await delay(0)
+						await sleep(0)
 						continue
 					}
 
@@ -669,7 +677,7 @@ export class SubagentRunner {
 							},
 						],
 					})
-					await delay(0)
+					await sleep(0)
 					continue
 				}
 				emptyAssistantResponseRetries = 0
@@ -702,7 +710,7 @@ export class SubagentRunner {
 
 				conversation.push({ role: "user", content: toolExecResult.toolResultBlocks })
 				if (this.wrapUpRequested || this.isWrappingUp) {
-					await delay(0)
+					await sleep(0)
 					continue
 				}
 
@@ -714,7 +722,7 @@ export class SubagentRunner {
 				systemPrompt = this.contextBuilder.appendExecutionDeadline(refreshedContext.systemPrompt, timeout)
 				this.markActivity("refreshed tool and provider context")
 
-				await delay(0)
+				await sleep(0)
 			}
 		} catch (error) {
 			if (this.shouldAbort()) {
@@ -932,7 +940,7 @@ export class SubagentRunner {
 					error,
 				})
 				Logger.warn(`[SubagentRunner] Initial stream failed. Retrying attempt ${attempt + 1}.`, error)
-				await delay(delayMs)
+				await sleep(delayMs)
 			}
 		}
 	}

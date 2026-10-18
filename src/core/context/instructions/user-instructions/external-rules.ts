@@ -7,7 +7,7 @@ import {
 import { formatResponse } from "@core/formatResponse"
 import { GlobalFileNames } from "@core/storage/disk"
 import { StateManager } from "@core/storage/StateManager"
-import { listFiles } from "@services/glob/list-files"
+import { findFilesByName } from "@services/glob/list-files"
 import { DiracRulesToggles } from "@shared/dirac-rules"
 import { fileExistsAtPath, isDirectory } from "@utils/fs"
 import fs from "fs/promises"
@@ -136,76 +136,24 @@ export const getLocalCursorRules = async (cwd: string, toggles: DiracRulesToggle
 	return [cursorRulesFileInstructions, cursorRulesDirInstructions]
 }
 
-/**
- * Helper function to find all agents.md files recursively (case-insensitive)
- * Only searches if a top-level agents.md file exists
- */
+/** Discover all nested rules only when the root AGENTS.md enables the feature. */
 async function findAgentsMdFiles(cwd: string): Promise<string[]> {
-	try {
-		// First check if top-level agents.md exists
-		const topLevelAgentsPath = path.resolve(cwd, GlobalFileNames.agentsRulesFile)
-		const topLevelExists = await fileExistsAtPath(topLevelAgentsPath)
-
-		// Only search recursively if top-level agents.md exists
-		if (!topLevelExists) {
-			return []
-		}
-
-		// Search recursively for all agents.md files
-		const [allFiles] = await listFiles(cwd, true, 500)
-		const allFilePaths = allFiles.map((f) => f.path)
-		return allFilePaths.filter((filePath) => {
-			const basename = path.basename(filePath).toLowerCase()
-			return basename === GlobalFileNames.agentsRulesFile.toLowerCase()
-		})
-	} catch (error) {
-		Logger.error(`Failed to find agents.md files in ${cwd}:`, error)
-		return []
-	}
+	const topLevelAgentsPath = path.resolve(cwd, GlobalFileNames.agentsRulesFile)
+	if (!(await fileExistsAtPath(topLevelAgentsPath))) return []
+	const nestedFiles = await findFilesByName(cwd, GlobalFileNames.agentsRulesFile)
+	return [...new Set([topLevelAgentsPath, ...nestedFiles])]
 }
 
-/**
- * Gather formatted agents rules - searches recursively and combines all agents.md files
- */
+/** Gather enabled AGENTS.md rules without silently accepting an incomplete discovery. */
 export const getLocalAgentsRules = async (cwd: string, toggles: DiracRulesToggles) => {
 	const agentsRulesFilePath = path.resolve(cwd, GlobalFileNames.agentsRulesFile)
-
-	// Check if the top-level agents.md file is enabled
-	if (agentsRulesFilePath in toggles && toggles[agentsRulesFilePath] === false) {
-		return undefined
+	if (toggles[agentsRulesFilePath] === false) return undefined
+	const sections: string[] = []
+	for (const filePath of await findAgentsMdFiles(cwd)) {
+		if (toggles[filePath] === false) continue
+		const content = (await fs.readFile(filePath, "utf8")).trim()
+		if (content) sections.push(`## ${path.relative(cwd, filePath)}\n\n${content}`)
 	}
-
-	try {
-		const agentsMdFiles = await findAgentsMdFiles(cwd)
-
-		if (agentsMdFiles.length === 0) {
-			return undefined
-		}
-
-		// Read and combine all agents.md files
-		const combinedContent = await Promise.all(
-			agentsMdFiles.map(async (filePath) => {
-				try {
-					const fullPath = path.resolve(cwd, filePath)
-					const content = (await fs.readFile(fullPath, "utf8")).trim()
-					if (content) {
-						const relativePath = path.relative(cwd, fullPath)
-						return `## ${relativePath}\n\n${content}`
-					}
-					return null
-				} catch (error) {
-					Logger.error(`Failed to read agents.md file at ${filePath}:`, error)
-					return null
-				}
-			}),
-		).then((contents) => contents.filter(Boolean).join("\n\n"))
-
-		if (combinedContent) {
-			return formatResponse.agentsRulesLocalFileInstructions(cwd, combinedContent)
-		}
-	} catch (error) {
-		Logger.error("Failed to read agents.md files:", error)
-	}
-
+	if (sections.length) return formatResponse.agentsRulesLocalFileInstructions(cwd, sections.join("\n\n"))
 	return undefined
 }

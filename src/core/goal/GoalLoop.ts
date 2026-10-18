@@ -1,26 +1,17 @@
 import type { StateManager } from "@core/storage/StateManager"
+import { getTaskDirectoryPath } from "@core/storage/taskDirectory"
 import type { Task } from "@core/task"
-import type { TaskRunOutcome } from "@core/task/TaskRunOutcome"
+import { acquireTaskLock } from "@core/task/TaskLockUtils"
+import { serializeTaskError, type TaskRunOutcome } from "@core/task/TaskRunOutcome"
 import { SurfaceAdapter } from "@core/task/tools/adapters/SurfaceAdapter"
+import type { CompletionCommitResult, ICardHandle, IGoalTrait } from "@core/task/tools/interfaces/IToolEnvironment"
 import { combineCardSequences } from "@shared/combineCardSequences"
-import { getApiMetrics } from "@shared/getApiMetrics"
-import type {
-	CompletionCommitResult,
-	IGoalTrait,
-	ICardHandle,
-} from "@core/task/tools/interfaces/IToolEnvironment"
 import { CardStatus, isFinalStatus } from "@shared/ExtensionMessage"
+import { getApiMetrics } from "@shared/getApiMetrics"
 import type { GoalAccounting, GoalRecord, GoalViewState } from "@shared/goal"
-import {
-	GOAL_MODE_SWITCHING_EXPLANATION,
-	isActiveGoalStatus,
-	isResumableGoalStatus,
-} from "@shared/goal"
-import {
-	isGoalHistoryItem,
-	type GoalHistoryItem,
-	type HistoryItem,
-} from "@shared/HistoryItem"
+import { GOAL_MODE_SWITCHING_EXPLANATION, isActiveGoalStatus, isResumableGoalStatus } from "@shared/goal"
+import { type GoalHistoryItem, type HistoryItem, isGoalHistoryItem } from "@shared/HistoryItem"
+import { Logger } from "@shared/services/Logger"
 import Mutex from "p-mutex"
 import { ulid } from "ulid"
 import { replaceGoalAccountingSource } from "./GoalAccounting"
@@ -41,13 +32,14 @@ interface LiveGoalRuntime {
 	host: GoalTaskHost
 	run: Promise<TaskRunOutcome>
 	settlement?: Promise<void>
+	settling?: boolean
 }
 
 export interface GoalLoopDependencies {
 	goalId: string
 	initialDisplayText: string
 	store: GoalStore
-	taskFactory: GoalTaskFactory
+	createTaskFactory: () => GoalTaskFactory
 	stateManager: StateManager
 	updateHistory: (item: HistoryItem) => Promise<HistoryItem[]>
 	postState: () => Promise<void>
@@ -63,7 +55,7 @@ export class GoalLoop {
 	private followUpEndReason?: string
 	private coordinatorInteractionCount = 0
 
-	constructor(private readonly dependencies: GoalLoopDependencies) { }
+	constructor(private readonly dependencies: GoalLoopDependencies) {}
 
 	get goalId(): string {
 		return this.dependencies.goalId
@@ -85,35 +77,35 @@ export class GoalLoop {
 		return this.runtime?.kind === "followup"
 	}
 
-	async start(): Promise<void> {
-		await this.activate(false)
+	async start(beforeStart?: () => Promise<void>): Promise<void> {
+		await this.activate(false, beforeStart)
 	}
 
-	async resume(): Promise<void> {
-		await this.activate(true)
+	async resume(beforeStart?: () => Promise<void>): Promise<void> {
+		await this.activate(true, beforeStart)
 	}
 
 	async sendMessage(message: string): Promise<void> {
 		const text = message.trim()
 		if (!text) throw new Error("A Goal message cannot be empty")
-
 		let running: LiveGoalRuntime | undefined
 		await this.lifecycleMutex.withLock(async () => {
 			if (this.runtime) {
 				running = this.runtime
 				return
 			}
-			const record = await this.dependencies.store.read(this.goalId)
-			if (isActiveGoalStatus(record.status)) {
-				throw new Error(`Goal ${this.goalId} is ${record.status} without a running coordinator`)
+			const releaseOwnership = await acquireTaskLock(getTaskDirectoryPath(this.goalId))
+			try {
+				const record = await this.dependencies.store.recoverInterruptedExecution(this.goalId)
+				this.requestedEnd = undefined
+				this.followUpEndReason = undefined
+				const runtime = await this.constructRuntime(record, "followup", false, text)
+				this.startRuntimeSettlement(runtime, releaseOwnership)
+			} catch (error) {
+				await releaseOwnership()
+				throw error
 			}
-			this.requestedEnd = undefined
-			this.followUpEndReason = undefined
-			const runtime = await this.constructRuntime(record, "followup", false, text)
-			this.runtime = runtime
-			runtime.settlement = this.settleCoordinatorRun(runtime)
 		})
-
 		if (running) {
 			await this.enqueueMessage(running, text)
 			return
@@ -144,28 +136,34 @@ export class GoalLoop {
 	}
 
 	async stop(reason = "Stopped by user"): Promise<GoalRecord> {
-		const current = await this.dependencies.store.read(this.goalId)
-		if (current.status === "stopped" || current.status === "achieved") return current
-		if (!isActiveGoalStatus(current.status)) {
-			const stopped = await this.dependencies.store.transition(this.goalId, { status: "stopped", statusReason: reason })
-			await this.syncHistory(stopped)
-			await this.dependencies.postState()
-			return stopped
-		}
-		return this.endActiveRun("stopped", "cancelled", reason)
+		if (this.runtime?.kind === "goal") return this.endActiveRun("stopped", "cancelled", reason)
+		if (this.runtime) await this.cancelFollowUp(reason)
+		return this.lifecycleMutex.withLock(async () => {
+			const releaseOwnership = await acquireTaskLock(getTaskDirectoryPath(this.goalId))
+			try {
+				const current = await this.dependencies.store.recoverInterruptedExecution(this.goalId)
+				if (current.status === "stopped" || current.status === "achieved") return current
+				const stopped = await this.dependencies.store.transition(this.goalId, { status: "stopped", statusReason: reason })
+				await this.syncHistory(stopped)
+				await this.dependencies.postState()
+				return stopped
+			} finally {
+				await releaseOwnership()
+			}
+		})
 	}
 
 	async inspect(): Promise<GoalViewState> {
-		return goalViewState(await this.dependencies.store.read(this.goalId), this.isFollowUpActive)
+		return goalViewState(await this.dependencies.store.read(this.goalId), this.isFollowUpActive, this.hasRunningCoordinator)
 	}
 
 	async publishHistory(): Promise<void> {
 		await this.syncHistory(await this.dependencies.store.read(this.goalId))
 	}
 
-	private async activate(resume: boolean): Promise<void> {
+	private async activate(resume: boolean, beforeStart?: () => Promise<void>): Promise<void> {
 		try {
-			await this.lifecycleMutex.withLock(() => this.activateSerial(resume))
+			await this.lifecycleMutex.withLock(() => this.activateSerial(resume, beforeStart))
 		} catch (error) {
 			try {
 				await this.dependencies.postState()
@@ -177,34 +175,38 @@ export class GoalLoop {
 		await this.dependencies.postState()
 	}
 
-	private async activateSerial(resume: boolean): Promise<void> {
+	private async activateSerial(resume: boolean, beforeStart?: () => Promise<void>): Promise<void> {
 		if (this.runtime) throw new Error(`Goal ${this.goalId} already has a running coordinator`)
-		const current = await this.dependencies.store.read(this.goalId)
-		if (resume && !isResumableGoalStatus(current.status)) {
-			throw new Error(`Goal ${this.goalId} cannot resume from ${current.status}`)
-		}
-		if (!resume && (current.status !== "paused" || current.statusReason !== "Created")) {
-			throw new Error(`Goal ${this.goalId} has already been started`)
-		}
-
-		this.requestedEnd = undefined
-		this.followUpEndReason = undefined
-		const working = await this.dependencies.store.transition(this.goalId, {
-			status: "working",
-			statusReason: resume ? "Resumed by user" : "Started",
-		})
-		await this.syncHistory(working)
-
+		const releaseOwnership = await acquireTaskLock(getTaskDirectoryPath(this.goalId))
 		try {
-			const runtime = await this.constructRuntime(working, "goal", resume)
-			this.runtime = runtime
-			runtime.settlement = this.settleCoordinatorRun(runtime)
-		} catch (error) {
-			const blocked = await this.dependencies.store.transition(this.goalId, {
-				status: "blocked",
-				statusReason: errorMessage(error),
+			const current = await this.dependencies.store.recoverInterruptedExecution(this.goalId)
+			if (resume && !isResumableGoalStatus(current.status)) {
+				throw new Error(`Goal ${this.goalId} cannot resume from ${current.status}`)
+			}
+			if (!resume && (current.status !== "paused" || current.statusReason !== "Created")) {
+				throw new Error(`Goal ${this.goalId} has already been started`)
+			}
+			await beforeStart?.()
+			this.requestedEnd = undefined
+			this.followUpEndReason = undefined
+			const working = await this.dependencies.store.transition(this.goalId, {
+				status: "working",
+				statusReason: resume ? "Resumed by user" : "Started",
 			})
-			await this.syncHistory(blocked)
+			try {
+				await this.syncHistory(working)
+				const runtime = await this.constructRuntime(working, "goal", resume)
+				this.startRuntimeSettlement(runtime, releaseOwnership)
+			} catch (error) {
+				const blocked = await this.dependencies.store.transition(this.goalId, {
+					status: "blocked",
+					statusReason: errorMessage(error),
+				})
+				await this.syncHistory(blocked)
+				throw error
+			}
+		} catch (error) {
+			await releaseOwnership()
 			throw error
 		}
 	}
@@ -215,33 +217,30 @@ export class GoalLoop {
 		resume: boolean,
 		followUpMessage?: string,
 	): Promise<LiveGoalRuntime> {
+		const taskFactory = this.dependencies.createTaskFactory()
 		const coordinatorAuxiliarySourceId = `goal/aux:${ulid()}`
 		let host!: GoalTaskHost
 		host = new GoalTaskHost(this.goalId, this.dependencies.store, async (input) =>
-			this.dependencies.taskFactory.create({
+			taskFactory.create({
 				id: input.id,
 				conversationUlid: input.conversationUlid,
 				prompt: input.prompt,
 				executionProfile: "goal_child",
+				childRole: input.role,
 				environmentFactory: input.environmentFactory,
 				onHistorySnapshot: (_item, task) =>
 					this.recordAccounting(
 						input.role === "verification" ? `goal/verification:${input.id}` : `goal/child:${input.id}`,
-						input.role === "verification"
-							? `goal/verification:${input.id}/aux`
-							: `goal/child:${input.id}/aux`,
+						input.role === "verification" ? `goal/verification:${input.id}/aux` : `goal/child:${input.id}/aux`,
 						task,
 					),
 			}),
 		)
 		await host.recoverUnreadResponses()
-		const environmentFactory = new GoalCoordinatorToolEnvironmentFactory(
-			(surface) => this.goalTrait(host, surface),
-			{
-				duringUserInteraction: (operation) => this.duringCoordinatorInteraction(operation),
-			},
-		)
-		const coordinator = await this.dependencies.taskFactory.create({
+		const environmentFactory = new GoalCoordinatorToolEnvironmentFactory((surface) => this.goalTrait(host, surface), {
+			duringUserInteraction: (operation) => this.duringCoordinatorInteraction(operation),
+		})
+		const coordinator = await taskFactory.create({
 			id: this.goalId,
 			conversationUlid: record.conversationUlid,
 			...(resume || kind === "followup"
@@ -273,58 +272,63 @@ export class GoalLoop {
 		return { kind, coordinator, host, run }
 	}
 
-	private async settleCoordinatorRun(runtime: LiveGoalRuntime): Promise<void> {
-		const outcome = await runtime.run
-		if (runtime.kind === "followup") {
-			await this.settleFollowUpRun(runtime, outcome)
-			return
-		}
-		await this.lifecycleMutex.withLock(async () => {
-			if (this.runtime !== runtime) return
-			const requested = this.requestedEnd
-			let transition =
-				requested && outcome.kind !== "failed" ? requested : transitionForOutcome(outcome)
-			try {
-				await runtime.host.shutdown(
-					transition.status === "stopped" ? "cancelled" : "interrupted",
-					transition.reason ?? `Goal became ${transition.status}`,
-				)
-			} catch (error) {
-				transition = { status: "blocked", reason: `Owned activity failed to stop: ${errorMessage(error)}` }
-			}
-			const record = await this.dependencies.store.transition(this.goalId, {
-				status: transition.status,
-				statusReason: transition.reason,
-			})
-			this.runtime = undefined
-			this.requestedEnd = undefined
-			await this.syncHistory(record)
-		})
-		await this.dependencies.postState()
+	private startRuntimeSettlement(runtime: LiveGoalRuntime, releaseOwnership: () => Promise<void>): void {
+		this.runtime = runtime
+		runtime.settlement = this.settleCoordinatorRun(runtime, releaseOwnership)
+		// Keep the rejecting promise for cancellation callers, and report failures of autonomous settlement.
+		void runtime.settlement.catch((error) => Logger.error(`[Goal ${this.goalId}] Settlement failed:`, error))
 	}
 
-	private async settleFollowUpRun(runtime: LiveGoalRuntime, outcome: TaskRunOutcome): Promise<void> {
-		const reason = this.followUpEndReason ?? followUpOutcomeReason(outcome)
-		const childEnd = outcome.kind === "cancelled" ? "cancelled" : "interrupted"
-		let shutdownError: unknown
-		try {
-			await runtime.host.shutdown(childEnd, reason)
-		} catch (error) {
-			shutdownError = error
-		}
-
+	private async settleCoordinatorRun(runtime: LiveGoalRuntime, releaseOwnership: () => Promise<void>): Promise<void> {
+		const outcome = await runtime.run.catch(
+			(error): TaskRunOutcome => ({
+				kind: "failed",
+				error: serializeTaskError(error),
+				failedAt: Date.now(),
+			}),
+		)
+		runtime.settling = true
 		await this.lifecycleMutex.withLock(async () => {
-			if (this.runtime !== runtime) return
-			this.runtime = undefined
-			this.followUpEndReason = undefined
-			await this.syncHistory(await this.dependencies.store.read(this.goalId))
+			try {
+				if (runtime.kind === "followup") {
+					await runtime.host.shutdown(
+						outcome.kind === "cancelled" ? "cancelled" : "interrupted",
+						this.followUpEndReason ?? followUpOutcomeReason(outcome),
+					)
+					await this.syncHistory(await this.dependencies.store.read(this.goalId))
+					return
+				}
+				const requested = this.requestedEnd
+				let transition = requested && outcome.kind !== "failed" ? requested : transitionForOutcome(outcome)
+				try {
+					await runtime.host.shutdown(
+						transition.status === "stopped" ? "cancelled" : "interrupted",
+						transition.reason ?? `Goal became ${transition.status}`,
+					)
+				} catch (error) {
+					transition = { status: "blocked", reason: `Owned activity failed to stop: ${errorMessage(error)}` }
+				}
+				const record = await this.dependencies.store.transition(this.goalId, {
+					status: transition.status,
+					statusReason: transition.reason,
+				})
+				await this.syncHistory(record)
+			} finally {
+				try {
+					await releaseOwnership()
+				} finally {
+					this.runtime = undefined
+					this.requestedEnd = undefined
+					this.followUpEndReason = undefined
+					await this.dependencies.postState()
+				}
+			}
 		})
-		await this.dependencies.postState()
-		if (shutdownError) throw shutdownError
 	}
 
 	private async enqueueMessage(runtime: LiveGoalRuntime, text: string): Promise<void> {
-		if (this.runtime !== runtime) throw new Error(`Goal ${this.goalId} coordinator changed before message delivery`)
+		if (this.runtime !== runtime || runtime.settling)
+			throw new Error(`Goal ${this.goalId} coordinator has stopped; resume it before sending steering`)
 		await runtime.coordinator.enqueueSteeringMessage(text)
 		await runtime.host.recordUserSteering()
 		await this.dependencies.postState()
@@ -359,11 +363,7 @@ export class GoalLoop {
 	): Promise<GoalRecord> {
 		let runtime: LiveGoalRuntime | undefined
 		await this.lifecycleMutex.withLock(async () => {
-			const current = await this.dependencies.store.read(this.goalId)
-			if (current.status === status) return
-			if (!isActiveGoalStatus(current.status) || !this.runtime) {
-				return
-			}
+			if (this.runtime?.kind !== "goal") return
 			this.requestedEnd ??= { status, reason }
 			runtime = this.runtime
 		})
@@ -425,25 +425,22 @@ export class GoalLoop {
 			const taskDetails =
 				source.renderType === "markdown"
 					? [
-						`**Task:** ${currentChild.title}`,
-						`**Task ID:** \`${currentChild.id}\``,
-						`**Interaction ID:** \`${currentChild.pendingInteraction.id}\``,
-					].join("\n")
+							`**Task:** ${currentChild.title}`,
+							`**Task ID:** \`${currentChild.id}\``,
+							`**Interaction ID:** \`${currentChild.pendingInteraction.id}\``,
+						].join("\n")
 					: [
-						`Task: ${currentChild.title}`,
-						`Task ID: ${currentChild.id}`,
-						`Interaction ID: ${currentChild.pendingInteraction.id}`,
-					].join("\n")
+							`Task: ${currentChild.title}`,
+							`Task ID: ${currentChild.id}`,
+							`Interaction ID: ${currentChild.pendingInteraction.id}`,
+						].join("\n")
 			const card = await surface.ui.createManualInteractionCard({
 				kind: source.kind,
 				header: `${source.header || "Task interaction"} · ${currentChild.title}`,
 				toolName: "resolve_task_interaction",
 				icon: source.icon,
 				renderType: source.renderType,
-				body:
-					source.renderType === "diff"
-						? source.body
-						: `${taskDetails}${source.body ? `\n\n${source.body}` : ""}`,
+				body: source.renderType === "diff" ? source.body : `${taskDetails}${source.body ? `\n\n${source.body}` : ""}`,
 				rawInput: {
 					...(source.rawInput ?? {}),
 					taskId: currentChild.id,
@@ -525,11 +522,7 @@ export class GoalLoop {
 		surface.orchestration.setTaskState("abort", true)
 	}
 
-	private async commitCompletion(
-		host: GoalTaskHost,
-		surface: SurfaceAdapter,
-		result: string,
-	): Promise<CompletionCommitResult> {
+	private async commitCompletion(host: GoalTaskHost, surface: SurfaceAdapter, result: string): Promise<CompletionCommitResult> {
 		let completion: CompletionCommitResult
 		try {
 			completion = await host.commitTerminalAttempt(() => surface.orchestration.commitAttemptCompletion(result))
@@ -615,7 +608,9 @@ export class GoalLoop {
 
 	private async pinnedContext(): Promise<string> {
 		const record = await this.dependencies.store.read(this.goalId)
-		const active = record.children.filter((child) => child.status === "starting" || child.status === "running" || child.status === "waiting")
+		const active = record.children.filter(
+			(child) => child.status === "starting" || child.status === "running" || child.status === "waiting",
+		)
 		return [
 			`<goal_lifecycle status="${record.status}" coordinator="${this.runtime?.kind ?? "idle"}">`,
 			`Follow-up conversation turns do not change this lifecycle status.`,
@@ -627,9 +622,10 @@ export class GoalLoop {
 			"",
 			"<goal_active_tasks>",
 			...(active.length
-				? active.map((child) =>
-					`- ${child.id} | ${child.title} | ${child.role} | ${child.status}${child.pendingInteraction ? ` | interaction ${child.pendingInteraction.id}` : ""}`,
-				)
+				? active.map(
+						(child) =>
+							`- ${child.id} | ${child.title} | ${child.role} | ${child.status}${child.pendingInteraction ? ` | interaction ${child.pendingInteraction.id}` : ""}`,
+					)
 				: ["- none"]),
 			"</goal_active_tasks>",
 		].join("\n")
@@ -671,21 +667,23 @@ function apiAccountingSnapshot(task: Task): GoalAccounting | undefined {
 		const deleted = status.deletedMetrics
 		return (
 			(status.tokensIn ?? 0) +
-			(status.tokensOut ?? 0) +
-			(status.cacheWrites ?? 0) +
-			(status.cacheReads ?? 0) +
-			(status.reasoningTokens ?? 0) +
-			(deleted?.tokensIn ?? 0) +
-			(deleted?.tokensOut ?? 0) +
-			(deleted?.cacheWrites ?? 0) +
-			(deleted?.cacheReads ?? 0) >
+				(status.tokensOut ?? 0) +
+				(status.cacheWrites ?? 0) +
+				(status.cacheReads ?? 0) +
+				(status.reasoningTokens ?? 0) +
+				(deleted?.tokensIn ?? 0) +
+				(deleted?.tokensOut ?? 0) +
+				(deleted?.cacheWrites ?? 0) +
+				(deleted?.cacheReads ?? 0) >
 			0
 		)
 	})
 	const subagentUsage = messages
-		.filter((message) => message.content.type === "card" && (
-			message.content.card.rawOutput?.source === "subagents" || message.content.card.header === "Subagent Usage"
-		))
+		.filter(
+			(message) =>
+				message.content.type === "card" &&
+				(message.content.card.rawOutput?.source === "subagents" || message.content.card.header === "Subagent Usage"),
+		)
 		.map((message) => {
 			if (message.content.type !== "card") return undefined
 			const card = message.content.card
@@ -721,9 +719,7 @@ function apiAccountingSnapshot(task: Task): GoalAccounting | undefined {
 		...(inputAvailable && outputAvailable ? { totalTokens: metrics.totalTokensIn + metrics.totalTokensOut } : {}),
 		...(inputAvailable ? { inputTokens: metrics.totalTokensIn } : {}),
 		...(outputAvailable ? { outputTokens: metrics.totalTokensOut } : {}),
-		...(available("reasoningTokens") && !hasSubagentUsage
-			? { reasoningTokens: metrics.totalReasoningTokens }
-			: {}),
+		...(available("reasoningTokens") && !hasSubagentUsage ? { reasoningTokens: metrics.totalReasoningTokens } : {}),
 		...(available("cacheReads") && subagentFieldAvailable("cacheReads")
 			? { cacheReadTokens: metrics.totalCacheReads ?? 0 }
 			: {}),
@@ -807,7 +803,7 @@ function transitionForOutcome(outcome: TaskRunOutcome): { status: RequestedEnd; 
 	}
 }
 
-function goalViewState(record: GoalRecord, followUpActive: boolean): GoalViewState {
+function goalViewState(record: GoalRecord, followUpActive: boolean, hasLocalExecution: boolean): GoalViewState {
 	const now = Date.now()
 	const children = record.children.map((child) => ({
 		...child,
@@ -819,6 +815,7 @@ function goalViewState(record: GoalRecord, followUpActive: boolean): GoalViewSta
 		id: record.id,
 		status: record.status,
 		followUpActive,
+		hasLocalExecution,
 		...(record.statusReason ? { statusReason: record.statusReason } : {}),
 		objective: record.objective,
 		createdAt: record.createdAt,

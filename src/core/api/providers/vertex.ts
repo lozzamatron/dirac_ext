@@ -3,6 +3,7 @@ import { Tool as AnthropicTool } from "@anthropic-ai/sdk/resources/index"
 import { AnthropicVertex } from "@anthropic-ai/vertex-sdk"
 import { FunctionDeclaration as GoogleTool } from "@google/genai"
 import {
+	getAnthropicReasoningEffort,
 	isAnthropicAdaptiveThinkingSupported,
 	ModelInfo,
 	VertexModelId,
@@ -18,6 +19,7 @@ import { sanitizeAnthropicMessages } from "../transform/anthropic-format"
 import { ApiStream } from "../transform/stream"
 import { GeminiHandler } from "./gemini"
 
+// The installed SDK types do not yet include xhigh, which the API accepts for Opus 5.5.
 type AnthropicEffort = "low" | "medium" | "high" | "max"
 
 interface VertexHandlerOptions extends CommonApiHandlerOptions {
@@ -118,7 +120,7 @@ export class VertexHandler implements ApiHandler {
 		// Claude implementation
 		const budget_tokens = this.options.thinkingBudgetTokens || 0
 		// Use model metadata to determine if reasoning should be enabled
-		const reasoningOn = (model.info.supportsReasoning ?? false) && budget_tokens !== 0
+		const reasoningOn = (model.info.supportsReasoning ?? false) && (model.info.thinkingAlwaysOn || budget_tokens !== 0)
 		const useAdaptive = isAnthropicAdaptiveThinkingSupported(modelId, model.info)
 
 		// Tools are available only when native tools are enabled.
@@ -134,7 +136,11 @@ export class VertexHandler implements ApiHandler {
 					: { type: "enabled", budget_tokens: budget_tokens }
 				: undefined,
 			...(reasoningOn && useAdaptive
-				? { output_config: { effort: (this.options.reasoningEffort as AnthropicEffort) || "high" } }
+				? {
+						output_config: {
+							effort: getAnthropicReasoningEffort(model.info, this.options.reasoningEffort) as AnthropicEffort,
+						},
+					}
 				: {}),
 			temperature: reasoningOn ? undefined : (model.info.temperature ?? undefined),
 			system: [
@@ -147,7 +153,8 @@ export class VertexHandler implements ApiHandler {
 			messages: anthropicMessages,
 			stream: true,
 			tools: nativeToolsOn ? (tools as AnthropicTool[]) : undefined,
-			tool_choice: nativeToolsOn && !reasoningOn ? { type: "any" } : undefined,
+			tool_choice:
+				nativeToolsOn && !reasoningOn && model.info.supportsForcedToolUse !== false ? { type: "any" } : undefined,
 		} as BetaMessageCreateParamsStreaming
 
 		const stream = await clientAnthropic.beta.messages.create(request, { signal })

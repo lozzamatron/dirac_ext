@@ -13,6 +13,7 @@ const JOURNAL_EXTENSION = ".jsonl"
 const LEGACY_ISOLATED_EXTENSION = ".json"
 const ARCHIVE_EXTENSION = ".migrated"
 const DEFAULT_MAX_JOURNAL_BYTES = 32 * 1024 * 1024
+const JOURNAL_COMPACTION_RETAIN_RATIO = 0.75
 const TAIL_READ_BYTES = 64 * 1024
 const LOCK_WAIT_TIMEOUT_MS = 15_000
 const LOCK_ORPHAN_GRACE_MS = 30_000
@@ -23,23 +24,23 @@ type SessionUpdateWithMeta = acp.SessionUpdate & { _meta?: Record<string, unknow
 
 export type PersistedSessionUpdate =
 	| {
-			kind: "session_update"
-			sequenceNumber: number
-			update: SessionUpdateWithMeta
-	  }
+		kind: "session_update"
+		sequenceNumber: number
+		update: SessionUpdateWithMeta
+	}
 	| {
-			kind: "client_annotation"
-			sequenceNumber: number
-			annotation: Record<string, unknown>
-	  }
+		kind: "client_annotation"
+		sequenceNumber: number
+		annotation: Record<string, unknown>
+	}
 
 type LegacyPersistedSessionUpdate =
 	| PersistedSessionUpdate
 	| {
-			kind: "usage_update"
-			sequenceNumber: number
-			usage: Record<string, unknown>
-	  }
+		kind: "usage_update"
+		sequenceNumber: number
+		usage: Record<string, unknown>
+	}
 
 type LegacySessionUpdatesMap = Record<string, LegacyPersistedSessionUpdate[]>
 
@@ -83,7 +84,7 @@ function malformedJournalError(filePath: string, error: unknown): Error {
 	const detail = error instanceof Error ? error.message : String(error)
 	return new Error(
 		`Malformed ACP session update journal at ${filePath}: ${detail}. ` +
-			"Dirac will not overwrite or reset this file; move it aside for recovery or repair the JSON before retrying.",
+		"Dirac will not overwrite or reset this file; move it aside for recovery or repair the JSON before retrying.",
 	)
 }
 
@@ -447,10 +448,10 @@ function appendRow(filePath: string, row: string): number {
 }
 
 /**
- * When the journal exceeds its size budget, drop the oldest entries — never
- * failing the live write — and rewrite the retained tail atomically. Sequence
- * numbers are preserved on the retained entries. A single entry larger than the
- * budget is kept whole, accepting a one-entry overshoot.
+ * When the journal exceeds its size budget, drop the oldest entries and
+ * retain at most 75% of the budget. Leaving headroom prevents a full journal
+ * parse and rewrite on every streamed chunk once a long session reaches the
+ * limit. Sequence numbers are preserved; a single oversized entry is kept.
  *
  * Compaction is best-effort size maintenance, deliberately run after the append
  * has already been durably written: a failure here only leaves the journal over
@@ -466,7 +467,8 @@ function compactIfNeeded(filePath: string, size: number): void {
 	const lengths = entries.map((entry) => Buffer.byteLength(serializeRow(entry)))
 	let total = lengths.reduce((sum, length) => sum + length, 0)
 	let drop = 0
-	while (drop < entries.length - 1 && total > maximumBytes) {
+	const targetBytes = Math.floor(maximumBytes * JOURNAL_COMPACTION_RETAIN_RATIO)
+	while (drop < entries.length - 1 && total > targetBytes) {
 		total -= lengths[drop]
 		drop += 1
 	}

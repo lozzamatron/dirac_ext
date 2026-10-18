@@ -1,3 +1,4 @@
+import path from "node:path"
 import { HookRegistry } from "./HookRegistry"
 import type { Hooks } from "./hook-factory"
 
@@ -32,7 +33,10 @@ export class HookConfigBuilder {
 
 		// Workspace hooks run from their containing workspace root
 		if (containingDir && workspaceRoots) {
-			const workspaceRoot = workspaceRoots.find((root) => containingDir.startsWith(root.path))
+			const workspaceRoot = workspaceRoots.find((root) => {
+				const relative = path.relative(root.path, containingDir)
+				return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+			})
 			if (workspaceRoot) return workspaceRoot.path
 		}
 

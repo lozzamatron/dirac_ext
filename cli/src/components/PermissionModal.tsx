@@ -1,11 +1,13 @@
-import { theme } from "../constants/theme"
+import { styles, theme } from "../constants/theme"
 import { Card as CardType } from "@shared/ExtensionMessage"
 import { Box, Text } from "ink"
 import React from "react"
 import { clipTextToWindow } from "../utils/text-clipping"
+import { Markdown } from "./modular-ui/Markdown"
 import { cardBodyForDisplay } from "../utils/card-body"
 import { CardBody } from "./modular-ui/CardBody"
 import { CardHeader } from "./modular-ui/CardHeader"
+import { Diff } from "./modular-ui/Diff"
 
 interface PermissionModalProps {
 	card: CardType
@@ -27,7 +29,9 @@ export const PermissionModal: React.FC<PermissionModalProps> = ({
 	height,
 }) => {
 	const body = cardBodyForDisplay(card.body, card.renderType)
-	const clipped = clipTextToWindow(body, bodyLines, bodyColumns, scrollOffset, "… earlier content clipped …")
+	// With separate file diffs, the body describes the request rather than containing a diff.
+	const bodyRenderType = card.renderType === "diff" && card.diffs?.length ? "text" : card.renderType
+	const visibleBody = bodyRenderType === "text" ? clipTextToWindow(body, bodyLines, bodyColumns, scrollOffset, "… earlier content clipped …").visibleText : body
 	const borderColor = card.requireApproval ? theme.warning : theme.status.waiting
 	const title = card.requireApproval ? "Permission required" : "Input required"
 
@@ -49,7 +53,13 @@ export const PermissionModal: React.FC<PermissionModalProps> = ({
 					<CardHeader header={card.header} icon={card.icon} status={card.status} />
 				</Box>
 				<Box flexDirection="column" marginTop={1}>
-					<CardBody body={clipped.visibleText} renderType={card.renderType} renderWidth={bodyColumns} />
+					{bodyRenderType === "markdown" ? (
+						<Markdown color={styles.tool.body.color} width={bodyColumns} maxLines={bodyLines} scrollOffset={scrollOffset}>{body}</Markdown>
+					) : bodyRenderType === "diff" ? (
+						<Diff content={body} width={bodyColumns} maxLines={bodyLines} scrollOffset={scrollOffset} />
+					) : (
+						<CardBody body={visibleBody} renderType={bodyRenderType} renderWidth={bodyColumns} />
+					)}
 				</Box>
 			</Box>
 			<Box flexShrink={0}>{renderFooter(card, scrollOffset, maxScrollOffset)}</Box>

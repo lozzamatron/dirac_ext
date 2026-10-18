@@ -137,6 +137,7 @@ class CheckpointTracker {
 		taskId: string,
 		enableCheckpointsSetting: boolean,
 		workspacePaths: string | string[],
+		signal = AbortSignal.timeout(15_000),
 	): Promise<CheckpointTracker | undefined> {
 		try {
 			Logger.info(`Creating new CheckpointTracker for task ${taskId}`)
@@ -150,7 +151,7 @@ class CheckpointTracker {
 
 			// Check if git is installed by attempting to get version
 			try {
-				await simpleGit().version()
+				await simpleGit({ abort: signal }).version()
 			} catch (_error) {
 				throw new Error("Git must be installed to use checkpoints.") // FIXME: must match what we check for in TaskHeader to show link
 			}
@@ -176,7 +177,8 @@ class CheckpointTracker {
 			await newTracker.sendCheckpointSubscriptionEvent("CHECKPOINT_INIT", true)
 
 			const gitPath = await getShadowGitPath(newTracker.cwdHash)
-			await newTracker.gitOperations.initShadowGit(gitPath, workingDir, taskId)
+			await newTracker.gitOperations.initShadowGit(gitPath, workingDir, taskId, signal)
+			signal.throwIfAborted()
 			await newTracker.sendCheckpointSubscriptionEvent("CHECKPOINT_INIT", false)
 
 			const durationMs = Math.round(performance.now() - startTime)
@@ -250,7 +252,7 @@ class CheckpointTracker {
 
 			const addFilesResult = await this.gitOperations.addCheckpointFiles(git)
 			if (!addFilesResult.success) {
-				Logger.error("Failed to add at least one file(s) to checkpoints shadow git")
+				throw new Error("Failed to stage checkpoint files; refusing to create a partial checkpoint")
 			}
 
 			const commitMessage = "checkpoint-" + this.cwdHash + "-" + this.taskId

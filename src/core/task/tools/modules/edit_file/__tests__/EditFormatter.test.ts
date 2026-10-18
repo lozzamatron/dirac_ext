@@ -75,6 +75,21 @@ describe("EditFormatter results", () => {
 		assert.ok(!result.includes("Do not retry"))
 	})
 
+	it("notes a leading newline when inserting after the empty EOF anchor", () => {
+		const prepared = prepareEdit(2)
+		prepared.lines = ["last line", ""]
+		prepared.finalLines = ["last line", "", "appended", ""]
+		prepared.resolvedEdits = [{
+			lineIdx: 1, endIdx: 1, editIndex: 0,
+			edit: { edit_type: "insert_after", anchor: "End§", text: "\nappended\n" },
+		}]
+		const result = format(prepared)
+		assert.ok(result.includes("Note: leading newline added a blank line at EOF."))
+
+		prepared.resolvedEdits[0].edit.text = "appended\n"
+		assert.ok(!format(prepared).includes("blank line at EOF"))
+	})
+
 	it("retains the saved-file anchor-limit warning and alternative", () => {
 		const prepared = prepareEdit(2)
 		const result = formatter.createResultsResponse(

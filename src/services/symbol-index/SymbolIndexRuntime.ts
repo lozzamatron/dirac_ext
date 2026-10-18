@@ -1,5 +1,6 @@
 import { type FSWatcher, watch } from "node:fs"
 import * as path from "node:path"
+import { setImmediate as yieldToEventLoop } from "node:timers/promises"
 import { Logger } from "../../shared/services/Logger"
 import { SymbolIndexTelemetry } from "./SymbolIndexTelemetry"
 
@@ -40,7 +41,7 @@ export class SymbolIndexRuntime {
 	private static readonly EXTERNAL_CONTROL_RETRY_MAX_DELAY_MS = 5 * 60_000
 	private static readonly EXTERNAL_CONTROL_RETRY_STABILITY_MS = 30_000
 
-	private workspaceWatcher: FSWatcher | null = null
+	private readonly workspaceWatchers = new Map<string, FSWatcher>()
 	private readonly externalControlWatchers = new Map<string, ExternalControlWatcher>()
 	private readonly desiredExternalControlPaths = new Map<string, Set<string>>()
 	private readonly externalControlRetryTimers = new Map<string, NodeJS.Timeout>()
@@ -58,7 +59,7 @@ export class SymbolIndexRuntime {
 		private readonly dependencies: SymbolIndexRuntimeDependencies,
 		private readonly watchFactory: SymbolIndexWatchFactory = defaultWatchFactory,
 	) {
-		this.startWorkspaceWatcher()
+		this.startWorkspaceWatcher(this.projectRoot)
 		this.schedulePeriodicReconciliation()
 	}
 
@@ -109,14 +110,38 @@ export class SymbolIndexRuntime {
 		await this.activeFlush
 	}
 
-	private startWorkspaceWatcher(): void {
+	public async refreshWorkspaceDirectories(directories: ReadonlySet<string>): Promise<boolean> {
+		if (this.disposed || this.liveWatchingDisabled) return false
+		let added = false
+		for (const [directory, watcher] of this.workspaceWatchers) {
+			if (directories.has(directory)) continue
+			watcher.close()
+			this.workspaceWatchers.delete(directory)
+		}
+		let count = 0
+		for (const directory of directories) {
+			if (this.disposed || this.liveWatchingDisabled) break
+			if (this.workspaceWatchers.has(directory)) continue
+			this.startWorkspaceWatcher(directory)
+			added = true
+			if (++count % 128 === 0) await yieldToEventLoop()
+		}
+		Logger.debug(`[SymbolIndexRuntime] Watching ${this.workspaceWatchers.size} eligible directories (non-recursive)`)
+		return added
+	}
+
+	private startWorkspaceWatcher(directory: string): void {
 		try {
-			const watcher = this.watchFactory(this.projectRoot, { persistent: true, recursive: true }, (eventType, filename) =>
-				this.recordWorkspaceChange(eventType, filename),
+			const watcher = this.watchFactory(directory, { persistent: true, recursive: false }, (eventType, filename) =>
+				this.recordWorkspaceChange(eventType, filename === null ? null : path.resolve(directory, filename.toString())),
 			)
-			this.workspaceWatcher = watcher
+			this.workspaceWatchers.set(directory, watcher)
 			watcher.on("error", (error) => this.disableLiveWatching(watcher, error))
 		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+				this.requestFullReconciliation("directory disappeared before watcher registration")
+				return
+			}
 			this.disableLiveWatching(null, error)
 		}
 	}
@@ -146,6 +171,17 @@ export class SymbolIndexRuntime {
 		const absolutePath = path.resolve(this.projectRoot, filename.toString())
 		if (!this.isInsideProjectRoot(absolutePath)) {
 			SymbolIndexTelemetry.recordWatcherRejected()
+			return
+		}
+
+		if (eventType === "rename" && this.workspaceWatchers.has(absolutePath)) {
+			// Directory replacement changes the inode: the old watch cannot be reused even at the same path.
+			for (const [directory, watcher] of this.workspaceWatchers) {
+				if (directory !== absolutePath && !directory.startsWith(`${absolutePath}${path.sep}`)) continue
+				watcher.close()
+				this.workspaceWatchers.delete(directory)
+			}
+			this.requestFullReconciliation("watched directory renamed or replaced")
 			return
 		}
 
@@ -233,7 +269,7 @@ export class SymbolIndexRuntime {
 
 	private disableLiveWatching(watcher: FSWatcher | null, error: unknown): void {
 		if (this.disposed || this.liveWatchingDisabled) return
-		if (watcher && this.workspaceWatcher !== watcher) return
+		if (watcher && ![...this.workspaceWatchers.values()].includes(watcher)) return
 		this.liveWatchingDisabled = true
 		this.pendingEvents.clear()
 		if (this.eventTimer) clearTimeout(this.eventTimer)
@@ -258,7 +294,7 @@ export class SymbolIndexRuntime {
 
 		const code = (error as NodeJS.ErrnoException).code
 		if (code === "EMFILE" || code === "ENFILE" || code === "ENOSPC") {
-			this.disableLiveWatching(this.workspaceWatcher, error)
+			this.disableLiveWatching(null, error)
 			return
 		}
 
@@ -325,9 +361,8 @@ export class SymbolIndexRuntime {
 	}
 
 	private closeAllWatchers(): void {
-		const workspaceWatcher = this.workspaceWatcher
-		this.workspaceWatcher = null
-		workspaceWatcher?.close()
+		for (const watcher of this.workspaceWatchers.values()) watcher.close()
+		this.workspaceWatchers.clear()
 		for (const { watcher } of this.externalControlWatchers.values()) watcher.close()
 		this.externalControlWatchers.clear()
 		this.clearAllExternalControlRetries()

@@ -5,7 +5,7 @@ import {
 	openAiNativeDefaultModelId,
 	openAiNativeModels,
 } from "@shared/api"
-import { normalizeOpenaiReasoningEffort } from "@shared/storage/types"
+import { resolveReasoningEffortForModel } from "@shared/utils/reasoning-support"
 import OpenAI from "openai"
 import type { ChatCompletionReasoningEffort, ChatCompletionTool } from "openai/resources/chat/completions"
 import { featureFlagsService } from "@/services/feature-flags"
@@ -117,6 +117,7 @@ export class OpenAiNativeHandler implements ApiHandler {
 	async compactConversation(request: ApiConversationCompactionRequest): Promise<ApiConversationCompactionResult> {
 		const model = this.getModel()
 		const usePersistedReasoning = supportsOpenAiPersistedReasoning(model.id, model.info.supportsPersistedReasoning)
+		const reasoningEffort = resolveReasoningEffortForModel(model.id, model.info, this.options.reasoningEffort)
 		const apiFormat = model.info.apiFormat
 		if (apiFormat !== ApiFormat.OPENAI_RESPONSES && apiFormat !== ApiFormat.OPENAI_RESPONSES_WEBSOCKET_MODE) {
 			throw new Error("OpenAI Native conversation compaction requires the Responses API")
@@ -133,7 +134,7 @@ export class OpenAiNativeHandler implements ApiHandler {
 			systemPrompt: request.systemPrompt,
 			input: input as any,
 			tools: responseTools,
-			reasoningEffort: this.options.reasoningEffort,
+			reasoningEffort,
 			reasoningContext: usePersistedReasoning ? "all_turns" : undefined,
 			enableParallelToolCalling: this.shouldEnableParallelToolCalling(),
 		})
@@ -213,9 +214,11 @@ export class OpenAiNativeHandler implements ApiHandler {
 		const systemRole = model.info.systemRole ?? "system"
 		const includeReasoning = model.info.supportsReasoningEffort
 		const includeTools = model.info.supportsTools ?? true
-		const requestedEffort = normalizeOpenaiReasoningEffort(this.options.reasoningEffort)
+		const requestedEffort = resolveReasoningEffortForModel(model.id, model.info, this.options.reasoningEffort)
 		const reasoningEffort =
-			includeReasoning && requestedEffort !== "none" ? (requestedEffort as ChatCompletionReasoningEffort) : undefined
+			includeReasoning && requestedEffort && requestedEffort !== "none"
+				? (requestedEffort as ChatCompletionReasoningEffort)
+				: undefined
 
 		const stream = await client.chat.completions.create(
 			{
@@ -261,6 +264,7 @@ export class OpenAiNativeHandler implements ApiHandler {
 	): ApiStream {
 		const model = this.getModel()
 		const serviceTier = this.resolveServiceTier(model.info)
+		const reasoningEffort = resolveReasoningEffortForModel(model.id, model.info, this.options.reasoningEffort)
 		const usePersistedReasoning = supportsOpenAiPersistedReasoning(model.id, model.info.supportsPersistedReasoning)
 		const useWebsocket = this.useWebsocketMode(model.info.apiFormat) && !usePersistedReasoning
 		const usePreviousResponseId = !options?.breakProviderContinuation && (usePersistedReasoning || useWebsocket)
@@ -293,7 +297,7 @@ export class OpenAiNativeHandler implements ApiHandler {
 			input: input as any,
 			previousResponseId: converted.previousResponseId,
 			tools: responseTools,
-			reasoningEffort: this.options.reasoningEffort,
+			reasoningEffort,
 			reasoningContext: usePersistedReasoning ? "all_turns" : undefined,
 			store: usePersistedReasoning ? true : undefined,
 			enableParallelToolCalling: this.shouldEnableParallelToolCalling(),
@@ -304,7 +308,7 @@ export class OpenAiNativeHandler implements ApiHandler {
 			systemPrompt,
 			input: fallbackInput as any,
 			tools: responseTools,
-			reasoningEffort: this.options.reasoningEffort,
+			reasoningEffort,
 			reasoningContext: usePersistedReasoning ? "all_turns" : undefined,
 			store: usePersistedReasoning ? true : undefined,
 			enableParallelToolCalling: this.shouldEnableParallelToolCalling(),
