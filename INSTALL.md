@@ -11,11 +11,11 @@ the integrated terminal).
 
 ```bash
 # 1. Download the release asset
-curl -fL -o /tmp/dirac-ext-0.5.13.vsix \
-  https://github.com/lozzamatron/dirac_ext/releases/download/v0.5.13-ext.1/dirac-ext-0.5.13.vsix
+curl -fL -o /tmp/dirac-ext-0.5.22.vsix \
+  https://github.com/lozzamatron/dirac_ext/releases/download/v0.5.22-ext.1/dirac-ext-0.5.22.vsix
 
-# 2. Verify it (must print: /tmp/dirac-ext-0.5.13.vsix: OK)
-echo "9fa79df9f543936203decc3abb2a048e9b857f44519eaef7c24fb96233e4af31  /tmp/dirac-ext-0.5.13.vsix" | sha256sum -c -
+# 2. Verify it (must print: /tmp/dirac-ext-0.5.22.vsix: OK)
+echo "ee18fea0d6572a26bf97ab0d9aebedf0d50f463dee35ac441ddedb6a0b183656  /tmp/dirac-ext-0.5.22.vsix" | sha256sum -c -
 
 # 3. Pick the CLI that talks to the RUNNING editor.
 #    Inside a VS Code / code-server terminal, `code-server` / `code` is a shim wired to the live
@@ -34,7 +34,7 @@ fi
 echo "Using: ${VSC[*]}"
 
 # 4. Install, then confirm (must list lozza.dirac-ext)
-"${VSC[@]}" --install-extension /tmp/dirac-ext-0.5.13.vsix --force
+"${VSC[@]}" --install-extension /tmp/dirac-ext-0.5.22.vsix --force
 "${VSC[@]}" --list-extensions | grep -i dirac-ext
 ```
 
