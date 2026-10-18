@@ -1,0 +1,32 @@
+workbench: Agent Manager - dirac_ext - code-server  (2026-10-18T21:48:55.566Z)
+PASS: a tab accepted the subagent prompt
+PASS: the subagent task ran to completion
+subagent task id: 1792360145875
+PASS: a task directory was created for it
+PASS: the task wrote a machine-readable sidecar (/config/.dirac/data/tasks/1792360145875/subagents/runs.json)
+runs.json: {"version":1,"taskId":"1792360145875","runs":[{"runId":"1792360146913-3-hawking-vynysv","agentId":3,"agentName":"Hawking","taskTitle":"Reply BETA","prompt":"Reply with exactly the single word BETA and nothing else. Do not use any tools.","status":"completed","startedAt":1792360146913,"modelId":"deepseek-v4.1-flash:1017-cloud","providerId":"openai","transcriptPath":"1792360146913-3-hawking-vynysv/transcript.md","endedAt":1792360148738,"usage":{"inputTokens":308,"outputTokens":222,"cacheReadTokens":11520,"cacheWriteTokens":0,"totalCost":0}},{"runId":"1792360146913-2-boltzmann-i5id2f","agentId":2
+PASS: the sidecar is valid, versioned JSON
+PASS: it holds both runs
+PASS: a settled run is recorded as completed (got completed)
+PASS: with both timestamps
+PASS: and the usage the terminal record measured
+PASS: the terminal write MERGED, keeping the agent name
+PASS: ...and the prompt the run started with
+PASS: a tab accepted the Goal objective
+goal terminal status: "Goal status: achieved"
+PASS: the Goal reached a terminal state
+new task dirs: ["1792360162221","1792360164222","1792360168486"]
+PASS: one of them is the Goal itself
+goal children: [{"id":"1792360164222","role":"task","status":"completed","title":"Run two-word subagent check"},{"id":"1792360168486","role":"verification","status":"completed","title":"Verify Goal: Confirm: exactly one child task was created via start_task; that child used use_subagents exactly once with exactly two subagents in one call; subagents returned exactly GAMMA and exactly DELTA respectively; no files were read/created/modified and no commands were run by the child or its subagents; the child reported both words."}]
+PASS: the Goal delegated to at least one child task
+child task that ran subagents: 1792360164222
+PASS: a CHILD task ran subagents of its own and recorded them on disk
+grandchildren on disk: ["Reply GAMMA","Reply DELTA"]
+map nodes: ["Run two-word subagent check","Reply GAMMA","Reply DELTA","Verify Goal: Confirm: exactly one child task was created via start_task; that child used use_subagents exactly once with exactly two subagents in one call; subagents returned exactly GAMMA and exactly DELTA respectively; no files were read/created/modified and no commands were run by the child or its subagents; the child reported both words."]
+PASS: the map shows a grandchild the transcript cannot contain (expected one of ["Reply GAMMA","Reply DELTA"], got ["Run two-word subagent check","Reply GAMMA","Reply DELTA","Verify Goal: Confirm: exactly one child task was created via start_task; that child used use_subagents exactly once with exactly two subagents in one call; subagents returned exactly GAMMA and exactly DELTA respectively; no files were read/created/modified and no commands were run by the child or its subagents; the child reported both words."])
+PASS: the Goal's child task is on the map too (Run two-word subagent check)
+PASS: no node is drawn twice — the live and disk maps key runs differently (got ["Run two-word subagent check","Reply GAMMA","Reply DELTA","Verify Goal: Confirm: exactly one child task was created via start_task; that child used use_subagents exactly once with exactly two subagents in one call; subagents returned exactly GAMMA and exactly DELTA respectively; no files were read/created/modified and no commands were run by the child or its subagents; the child reported both words."])
+node depths: [{"depth":0,"title":"Run two-word subagent check"},{"depth":1,"title":"Reply GAMMA"},{"depth":1,"title":"Reply DELTA"},{"depth":0,"title":"Verify Goal: Confirm: exactly one child task was created via start_task; that child used use_subagents exactly once with exactly two subagents in one call; subagents returned exactly GAMMA and exactly DELTA respectively; no files were read/created/modified and no commands were run by the child or its subagents; the child reported both words."}]
+PASS: a grandchild is drawn one level in, under its own parent
+PASS: ...and the Goal's child task stays at the top level
+RESULT: 0 failing assertion(s)

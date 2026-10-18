@@ -4,6 +4,7 @@ Every deviation from upstream `dirac-run/dirac`, so a rebase onto a new upstream
 bounded job. **Rule:** new behaviour goes in new files; touches to upstream files stay mechanical.
 
 - Fork point: upstream `main` @ `041fce18` (v0.5.13, 2026-09-16), branch `ext/main`.
+- **Upstream merged in: v0.5.22 @ `e7846d97` (2026-10-18)** — see "Upstream merge v0.5.22" below.
 - Remotes: `upstream` = https://github.com/dirac-run/dirac · `origin` = Gitea `lozza/dirac-ext` (private).
 - Extension identity: `lozza.dirac-ext`, display name **Dirac EXT**. Installs side-by-side with
   `dirac-run.dirac` and shares `~/.dirac/data` on purpose.
@@ -610,6 +611,41 @@ the pristine baseline**.
 ⚠️ `activate` is the obvious symbol for the zero-caller case and is **wrong** — it has 3 in-code
 callers. `deactivate` is exported and called only by VS Code itself.
 
+
+## Upstream merge v0.5.22 (2026-10-18, branch `ext/upstream-0.5.22`)
+
+A merge (not a rebase), so the nine `ext/wp*` branches stay readable. 138 upstream commits; 6 textual
+conflicts.
+
+| File | Resolution |
+|---|---|
+| `src/core/controller/task/TaskController.ts` | Upstream replaced the SQLite task lock with a file lock (`acquireTaskLock(dir)` → release closure) taken BEFORE `clearTask()`, and added a same-ID `clearTask()` for follow-up reconstruction. Order is now: same-ID clear → **EXT claim + `applyTaskTitle`** → file lock → upstream body; an outer catch releases the claim. The claim must follow the same-ID clear (the fork's `clearTask()` releases this controller's claim) and precede the second `clearTask()` (which then only retires a different task). Behaviour change: a claim conflict now leaves the controller's current task untouched instead of clearing it first. Tests: 4 `Dirac EXT …` cases in `TaskController.test.ts`. |
+| `src/core/controller/index.ts` | `export class Controller implements ITaskHost` + the fork's `readonly id = ulid()`. |
+| `src/core/controller/ui/openWalkthrough.ts` | Upstream's `HostProvider.get().capabilities.openWalkthrough?.()`; the id in `src/hosts/vscode/host-capabilities.ts` changed from upstream's hardcoded `` `dirac-run.${name}` `` to `ExtensionRegistryInfo.id` (now a touched upstream file). |
+| `package.json` / `package-lock.json` / `README.md` | Fork identity kept, version → 0.5.22; lock regenerated from upstream's. README keeps the Surfaces section above upstream's Sponsors. |
+
+Checked and clean: no singleton accessor came back (every upstream `getInstance()`/`getVisibleInstance()`
+site was already rewritten by the fork and the merge kept those versions); no fork code writes a gated
+`TaskState` field (upstream made those getter-only, so `tsc` proves it).
+
+**Known, not fixed — upstream's new `npm run check:arch` (dependency-cruiser) fails on fork code:** 8 fork
+files join the existing `src/core/api/index.ts` cyclic SCC (agentMap/fleet builders, call_graph tool,
+`InstanceRegistry`, `taskTitle`), and 2 `integrations-are-leaves` violations
+(`integrations/checkpoints/Checkpoint{DiffPresenter,RestoreHandler}.ts` → `core/webview/InstanceRegistry.ts`,
+the WP1 checkpoint routing). Not part of `npm run package`; it would fail upstream's
+`.github/workflows/architecture.yml` if Actions ran on the fork. Fix = inject the instance lookup into
+checkpoints instead of importing the registry.
+
+Verification: build + VSIX OK; fork tests 50 passing; full unit suite failing-test NAMES identical to
+pristine v0.5.22 (86) except one `mergeWorktree` 2 s hook timeout that passes 19/19 three times in
+isolation; browser acceptance re-run on the installed 0.5.22 VSIX — WP2 38/38 (run 2; run 1 lost the
+sidebar's first Enter, see below), WP3 36/36, WP4 33/33, WP5 21/21, WP5b 36/36, WP7 9/9. Evidence:
+`verification/upstream-0.5.22/`.
+
+Intermittent seen on BOTH 0.5.13 and 0.5.22: in a freshly loaded window the first Enter in a just-filled
+chat input sometimes does not submit (prompt stays in the box). 2 of ~10 fresh-window submits.
+
+---
 
 ## Build-host facts (not fork changes — they bite every WP)
 
